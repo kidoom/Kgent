@@ -1109,7 +1109,7 @@ observability:
 | A1 | 初始化目录树 | [x] | 2026-05-07 | pyproject.toml + 目录骨架 + .env.example |
 | A2 | 引入测试框架 | [x] | 2026-05-07 | tests/ 目录 + smoke tests（pytest 待安装） |
 | A3 | .env 配置加载 | [x] | 2026-05-07 | Config 类 + from_env + validate |
-| A4 | LLMProvider 基类 + Registry | [ ] | | |
+| A4 | LLMProvider 基类 + Registry | [x] | 2026-05-07 | LLMResponse/LLMChunk + ABC + Registry |
 | A5 | AgentLLM 门面 + 配置驱动 | [ ] | | |
 | A6 | OpenAIProvider（可插拔 Provider 示例实现） | [ ] | | |
 | A7 | Tool + ToolRegistry | [ ] | | |
