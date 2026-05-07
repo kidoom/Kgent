@@ -26,22 +26,34 @@
 
 > **状态标记**：`[ ]` 未开始 | `[~]` 进行中 | `[x]` 已完成
 
+#### 阶段 A — 工程骨架 + LLM 可插拔 + 工具可插拔
+
 | 编号 | 任务 | 状态 | 完成日期 | 备注 |
 |------|------|------|---------|------|
 | A1 | 初始化目录树 | [x] | 2026-05-07 | pyproject.toml + 目录骨架 + .env.example |
-| A2 | 引入测试框架 | [x] | 2026-05-07 | tests/ 目录 + smoke tests（pytest 待安装） |
+| A2 | 引入测试框架 | [x] | 2026-05-07 | tests/ 目录 + smoke tests |
 | A3 | .env 配置加载 | [x] | 2026-05-07 | Config 类 + from_env + validate |
-| A4 | LLMProvider 基类 + Registry | [x] | 2026-05-07 | LLMResponse/LLMChunk + ABC + Registry |
+| A4 | LLMProvider 基类 + Registry | [x] | 2026-05-07 | LLMResponse/Chunk + ABC + Registry |
 | A5 | AgentLLM 门面 + 配置驱动 | [x] | 2026-05-07 | PROVIDER_CONFIG + invoke/stream |
-| A6 | OpenAIProvider（可插拔 Provider 示例实现） | [x] | 2026-05-07 | chat + chat_stream + LLMError |
-| A7 | Tool + ToolRegistry | [x] | 2026-05-07 | Tool基类 + ToolRegistry + 19 tests |
+| A6 | OpenAIProvider | [x] | 2026-05-07 | chat + chat_stream + LLMError |
+| A7 | Tool + ToolRegistry | [x] | 2026-05-07 | Tool基类 + 生命周期管理 |
 | A8 | CalculatorTool + SearchTool | [x] | 2026-05-07 | AST安全解析 + SerpApi/Tavily |
+
+#### 阶段 B — Agent 范式实现
+
+| 编号 | 任务 | 状态 | 完成日期 | 备注 |
+|------|------|------|---------|------|
 | B1 | Agent 基类 + Message 系统 | [ ] | | |
 | B2 | SimpleAgent | [ ] | | |
 | B3 | ReActAgent | [ ] | | |
-| B4 | PlanAndSolveAgent | [ ] | | |
-| B5 | ReflectionAgent | [ ] | | |
-| B6 | FunctionCallAgent | [ ] | | |
+| B4 | PlanAndSolveAgent | [ ] | | v0.2+ |
+| B5 | ReflectionAgent | [ ] | | v0.2+ |
+| B6 | FunctionCallAgent | [ ] | | v0.2+ |
+
+#### 阶段 C — 框架化加固
+
+| 编号 | 任务 | 状态 | 完成日期 | 备注 |
+|------|------|------|---------|------|
 | C1 | 框架目录骨架 | [ ] | | |
 | C2 | Config 类 + 异常体系 | [ ] | | |
 | C3 | Agent 基类框架化 | [ ] | | |
@@ -51,20 +63,35 @@
 | C7 | ReActAgent 框架化 | [ ] | | |
 | C8 | pip install 验证 | [ ] | | |
 | C9 | FunctionCallAgent 框架化 | [ ] | | |
+
+#### 阶段 D — MCP 外部网关 + 链路追踪 + 容错 + 监控
+
+| 编号 | 任务 | 状态 | 完成日期 | 备注 |
+|------|------|------|---------|------|
 | D1 | Span + Tracer 数据模型 | [ ] | | |
 | D2 | TraceExporter | [ ] | | |
 | D3 | Agent 埋点集成 | [ ] | | |
 | D4 | MCPTool | [ ] | | |
 | D5 | MCP Server 模板 | [ ] | | |
 | D6 | MCP + ToolRegistry 集成 | [ ] | | |
-| D7 | 容错机制（try/except + 幂等 + 用户可见错误） | [ ] | | |
-| D8 | 监控（请求级日志 + trace_id + Token 统计） | [ ] | | |
+| D7 | 容错机制 | [ ] | | |
+| D8 | 监控（日志 + trace_id + Token） | [ ] | | |
+
+#### 阶段 E — 记忆系统 + 上下文工程
+
+| 编号 | 任务 | 状态 | 完成日期 | 备注 |
+|------|------|------|---------|------|
 | E1 | Memory 基类 + MemoryManager | [ ] | | |
 | E2 | WorkingMemory + EpisodicMemory | [ ] | | |
-| E2.5 | SemanticMemory（v0.3 可选） | [ ] | | |
+| E2.5 | SemanticMemory | [ ] | | v0.3 可选 |
 | E3 | MemoryTool | [ ] | | |
 | E4 | ContextBuilder | [ ] | | |
 | E5 | NoteTool + TerminalTool | [ ] | | |
+
+#### 阶段 F — 端到端验收
+
+| 编号 | 任务 | 状态 | 完成日期 | 备注 |
+|------|------|------|---------|------|
 | F1 | 旅行助手骨架 | [ ] | | |
 | F2 | 深度研究骨架 | [ ] | | |
 | F3 | 赛博小镇骨架 | [ ] | | |
