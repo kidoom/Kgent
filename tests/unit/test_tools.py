@@ -1,8 +1,13 @@
 """Tests for Tool base class and ToolRegistry"""
 
+import os
+from unittest.mock import patch
+
 import pytest
 
 from kagent.tools.base import Tool, ToolResult, ToolParameter
+from kagent.tools.builtin.calculator import CalculatorTool
+from kagent.tools.builtin.search import SearchTool
 from kagent.tools.registry import ToolRegistry
 
 
@@ -201,3 +206,172 @@ class TestToolRegistry:
         registry = ToolRegistry()
         desc = registry.get_tools_description()
         assert "无可用工具" in desc
+
+
+class TestToolLifecycle:
+    """Test ToolRegistry lifecycle: disable/enable"""
+
+    def test_disable_tool_rejects_execution(self):
+        registry = ToolRegistry()
+        registry.register_tool(MockTool())
+
+        assert registry.disable("mock_tool") is True
+        result = registry.execute_tool("mock_tool", {"input": "test"})
+        assert result.success is False
+        assert "被禁用" in result.content
+
+    def test_disable_function_rejects_execution(self):
+        registry = ToolRegistry()
+        registry.register_function("echo", "...", lambda args: args.get("text"))
+
+        assert registry.disable("echo") is True
+        result = registry.execute_tool("echo", {"text": "hi"})
+        assert result.success is False
+        assert "被禁用" in result.content
+
+    def test_enable_disabled_tool(self):
+        registry = ToolRegistry()
+        registry.register_tool(MockTool())
+        registry.disable("mock_tool")
+        assert registry.is_enabled("mock_tool") is False
+
+        assert registry.enable("mock_tool") is True
+        assert registry.is_enabled("mock_tool") is True
+
+        result = registry.execute_tool("mock_tool", {"input": "test"})
+        assert result.success is True
+
+    def test_disable_unregistered_returns_false(self):
+        registry = ToolRegistry()
+        assert registry.disable("nonexistent") is False
+
+    def test_enable_unregistered_returns_false(self):
+        registry = ToolRegistry()
+        assert registry.enable("nonexistent") is False
+
+    def test_is_enabled_unregistered(self):
+        registry = ToolRegistry()
+        assert registry.is_enabled("nonexistent") is False
+
+    def test_is_registered(self):
+        registry = ToolRegistry()
+        registry.register_tool(MockTool())
+        assert registry.is_registered("mock_tool") is True
+        assert registry.is_registered("nonexistent") is False
+
+    def test_disabled_not_in_description(self):
+        registry = ToolRegistry()
+        registry.register_tool(MockTool())
+        registry.disable("mock_tool")
+        desc = registry.get_tools_description()
+        assert "mock_tool" not in desc
+        assert "无可用工具" in desc
+
+    def test_list_tools_shows_status(self):
+        registry = ToolRegistry()
+        registry.register_tool(MockTool())
+        registry.register_function("echo", "...", lambda args: args)
+        registry.disable("echo")
+
+        tools = registry.list_tools()
+        assert tools["mock_tool"]["enabled"] is True
+        assert tools["echo"]["enabled"] is False
+        assert tools["mock_tool"]["type"] == "tool"
+        assert tools["echo"]["type"] == "function"
+
+    def test_unregister_clears_disabled_flag(self):
+        registry = ToolRegistry()
+        registry.register_tool(MockTool())
+        registry.disable("mock_tool")
+        registry.unregister("mock_tool")
+        # Re-register should start fresh (enabled)
+        registry.register_tool(MockTool())
+        assert registry.is_enabled("mock_tool") is True
+
+
+class TestCalculatorTool:
+    """Test CalculatorTool"""
+
+    def setup_method(self):
+        self.calc = CalculatorTool()
+
+    def test_basic_operations(self):
+        assert self.calc.run({"expression": "2+3*4"}).content == "14"
+
+    def test_subtraction(self):
+        assert self.calc.run({"expression": "10-3"}).content == "7"
+
+    def test_division(self):
+        assert "3.333" in self.calc.run({"expression": "10/3"}).content
+
+    def test_sqrt(self):
+        assert self.calc.run({"expression": "sqrt(16)"}).content == "4.0"
+
+    def test_sin(self):
+        result = self.calc.run({"expression": "sin(0)"})
+        assert result.success is True
+        assert result.content == "0.0"
+
+    def test_power(self):
+        assert self.calc.run({"expression": "2**10"}).content == "1024"
+
+    def test_complex_expression(self):
+        result = self.calc.run({"expression": "sqrt(100) + 2*3"})
+        assert result.success is True
+        assert result.content == "16.0"
+
+    def test_pi_call(self):
+        result = self.calc.run({"expression": "pi()"})
+        assert result.success is True
+        assert "3.14" in result.content
+
+    def test_division_by_zero(self):
+        result = self.calc.run({"expression": "1/0"})
+        assert result.success is False
+        assert "除数不能为零" in result.content
+
+    def test_invalid_expression(self):
+        result = self.calc.run({"expression": "1+"})
+        assert result.success is False
+
+    def test_empty_expression(self):
+        result = self.calc.run({"expression": ""})
+        assert result.success is False
+        assert "不能为空" in result.content
+
+    def test_get_parameters(self):
+        params = self.calc.get_parameters()
+        assert len(params) == 1
+        assert params[0].name == "expression"
+
+    def test_to_openai_schema(self):
+        schema = self.calc.to_openai_schema()
+        assert schema["function"]["name"] == "calculator"
+
+
+class TestSearchTool:
+    """Test SearchTool"""
+
+    def test_no_api_key_returns_error(self):
+        with patch.dict(os.environ, {"SERPAPI_API_KEY": "", "TAVILY_API_KEY": ""}, clear=True):
+            tool = SearchTool()
+            result = tool.run({"query": "Python"})
+            assert result.success is False
+            assert "未配置" in result.content
+
+    def test_empty_query(self):
+        tool = SearchTool()
+        result = tool.run({"query": ""})
+        assert result.success is False
+        assert "不能为空" in result.content
+
+    def test_get_parameters(self):
+        tool = SearchTool()
+        params = tool.get_parameters()
+        assert len(params) == 1
+        assert params[0].name == "query"
+
+    def test_to_openai_schema(self):
+        tool = SearchTool()
+        schema = tool.to_openai_schema()
+        assert schema["function"]["name"] == "search"

@@ -2,7 +2,7 @@
 
 ### 3.0 依赖清单（Dependency Manifest）
 
-> `pyproject.toml` 的 `[project.dependencies]` 和 `[project.optional-dependencies]` 必须按此表声明，不得遗漏或自行引入未列出的库。同时维护 `requirements.txt`（核心依赖）和 `requirements-dev.txt`（含 `-r requirements.txt` + 开发依赖），让开源用户 `pip install -r requirements.txt` 即可快速搭建环境。
+> `pyproject.toml` 的 `[project.dependencies]` 和 `[project.optional-dependencies]` 必须按此表声明，不得遗漏或自行引入未列出的库。用户通过 `pip install -e ".[dev]"` 即可搭建开发环境。
 
 #### 核心依赖（`pip install kagent`）
 
@@ -46,17 +46,6 @@
 | `collections` | `OrderedDict`（WorkingMemory 容量淘汰） | E |
 | `typing` | 类型注解（`Literal`, `Iterator`, `Any`） | 全阶段 |
 
-#### requirements.txt
-
-```
-# pip install -r requirements.txt
-pydantic>=2.0
-openai>=1.0
-python-dotenv>=1.0
-httpx>=0.24
-```
-
-> `requirements.txt` 与 `pyproject.toml` 的 `[project.dependencies]` 必须保持同步。`requirements-dev.txt` 以 `-r requirements.txt` 开头，追加 dev 依赖。
 
 #### pyproject.toml 完整声明
 

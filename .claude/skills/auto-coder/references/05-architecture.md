@@ -159,8 +159,6 @@ kagent/                              # ★ = v0.1 MVP 文件
 │   └── fixtures/
 │       └── .env.test                ★
 ├── pyproject.toml                   ★
-├── requirements.txt                 ★ 核心依赖（开源用户 pip install -r requirements.txt）
-├── requirements-dev.txt             ★ 开发依赖（-r requirements.txt + pytest）
 ├── .env.example                     ★
 ├── .gitignore                       ★ (.venv/, .env, __pycache__/, *.egg-info/)
 └── README.md                        ★

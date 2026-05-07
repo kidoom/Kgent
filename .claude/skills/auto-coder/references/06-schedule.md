@@ -34,8 +34,8 @@
 | A4 | LLMProvider 基类 + Registry | [x] | 2026-05-07 | LLMResponse/LLMChunk + ABC + Registry |
 | A5 | AgentLLM 门面 + 配置驱动 | [x] | 2026-05-07 | PROVIDER_CONFIG + invoke/stream |
 | A6 | OpenAIProvider（可插拔 Provider 示例实现） | [x] | 2026-05-07 | chat + chat_stream + LLMError |
-| A7 | Tool + ToolRegistry | [ ] | | |
-| A8 | CalculatorTool + SearchTool | [ ] | | |
+| A7 | Tool + ToolRegistry | [x] | 2026-05-07 | Tool基类 + ToolRegistry + 19 tests |
+| A8 | CalculatorTool + SearchTool | [x] | 2026-05-07 | AST安全解析 + SerpApi/Tavily |
 | B1 | Agent 基类 + Message 系统 | [ ] | | |
 | B2 | SimpleAgent | [ ] | | |
 | B3 | ReActAgent | [ ] | | |
@@ -78,12 +78,10 @@
 | 维度 | 内容 |
 |------|------|
 | 目标 | 创建 `kagent/` 目录骨架、`pyproject.toml`（含依赖）、`.env.example`、所有 `__init__.py`、创建 `.venv` 虚拟环境并安装依赖 |
-| 文件 | `pyproject.toml` `requirements.txt` `requirements-dev.txt` `.env.example` `.gitignore`（含 `.venv/`、`.env`、`__pycache__/`） `kagent/__init__.py` `kagent/core/__init__.py` `kagent/agents/__init__.py` `kagent/tools/__init__.py` `kagent/tools/builtin/__init__.py` `kagent/memory/__init__.py` `kagent/context/__init__.py` |
+| 文件 | `pyproject.toml` `.env.example` `.gitignore`（含 `.venv/`、`.env`、`__pycache__/`） `kagent/__init__.py` `kagent/core/__init__.py` `kagent/agents/__init__.py` `kagent/tools/__init__.py` `kagent/tools/builtin/__init__.py` `kagent/memory/__init__.py` `kagent/context/__init__.py` |
 | pyproject.toml 依赖 | 按 §3.0 依赖清单完整声明，不得遗漏或自行引入未列出的库 |
-| requirements.txt | 与 `pyproject.toml` 的 `[project.dependencies]` 保持一致，开源用户 `pip install -r requirements.txt` 即可 |
-| requirements-dev.txt | `-r requirements.txt` + `[project.optional-dependencies].dev` 中的包 |
 | .env.example | `LLM_PROVIDER=openai` `LLM_MODEL_ID=gpt-4o` `LLM_API_KEY=your-api-key-here` `LLM_BASE_URL=https://api.openai.com/v1` `LLM_TIMEOUT=60` `SEARCH_BACKEND=serpapi` `SERPAPI_API_KEY=` `TAVILY_API_KEY=` `TRACE_ENABLED=true` `TRACE_EXPORT=console` `LOG_LEVEL=INFO` `DEBUG=false` `MAX_HISTORY_LENGTH=50` `MAX_STEPS=5` |
-| 验收 | `python -m venv .venv && source .venv/bin/activate && pip install -r requirements-dev.txt` 成功 `pip install -e ".[dev]"` 成功 `python -c "import kagent"` 不报错 `python -c "import kagent.memory; import kagent.context"` 不报错 `pyproject.toml` 包含全部依赖 `requirements.txt` 与 `pyproject.toml` 的 `[project.dependencies]` 一致 `pytest -q tests/unit/test_smoke.py` 通过 |
+| 验收 | `python -m venv .venv && source .venv/bin/activate && pip install -e ".[dev]"` 成功 `python -c "import kagent"` 不报错 `python -c "import kagent.memory; import kagent.context"` 不报错 `pyproject.toml` 包含全部依赖 `pytest -q tests/unit/test_smoke.py` 通过 |
 | 测试 | `python -m compileall kagent/` |
 
 
