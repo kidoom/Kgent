@@ -1,13 +1,17 @@
 """Tests for LLM Provider abstraction and registry"""
 
+import os
 import pytest
 from typing import Iterator
+from unittest.mock import patch
 
+from kagent.core.config import Config, ConfigError
 from kagent.core.llm import (
     LLMResponse,
     LLMChunk,
     LLMProvider,
     LLMProviderRegistry,
+    AgentLLM,
 )
 
 
@@ -160,6 +164,119 @@ class TestLLMProviderRegistry:
                 temperature=0.0,
             )
         )
+        assert len(chunks) == 2
+        assert chunks[0].delta == "Hello"
+        assert chunks[1].delta == " World"
+
+
+class TestAgentLLMInit:
+    """Test AgentLLM initialization"""
+
+    def setup_method(self):
+        """Clean up AgentLLM registry before each test"""
+        AgentLLM._registry = LLMProviderRegistry()
+
+    def _config(self, **kwargs):
+        """Create a Config instance with defaults for testing"""
+        defaults = {
+            "default_provider": "openai",
+            "default_model": "gpt-4o",
+            "api_key": "sk-test",
+        }
+        defaults.update(kwargs)
+        return Config(**defaults)
+
+    def test_init_with_explicit_provider(self):
+        """Test explicit provider name"""
+        AgentLLM.register_provider("mock", MockLLMProvider())
+        config = self._config()
+        llm = AgentLLM(provider="mock", config=config)
+        assert llm.provider_name == "mock"
+
+    def test_init_from_config(self):
+        """Test reading provider from Config"""
+        AgentLLM.register_provider("testenv", MockLLMProvider())
+        config = self._config(default_provider="testenv", default_model="test-model")
+        llm = AgentLLM(config=config)
+        assert llm.provider_name == "testenv"
+        assert llm.model == "test-model"
+
+    def test_init_default_provider(self):
+        """Test default provider is openai from Config"""
+        AgentLLM.register_provider("openai", MockLLMProvider())
+        config = self._config()
+        llm = AgentLLM(config=config)
+        assert llm.provider_name == "openai"
+
+    def test_init_api_key_from_config(self):
+        """Test api_key is read from Config"""
+        AgentLLM.register_provider("openai", MockLLMProvider())
+        config = self._config(api_key="sk-from-config")
+        llm = AgentLLM(config=config)
+        assert llm.api_key == "sk-from-config"
+
+    def test_init_base_url_from_config(self):
+        """Test base_url is read from Config"""
+        AgentLLM.register_provider("openai", MockLLMProvider())
+        config = self._config(base_url="https://custom.api.com/v1")
+        llm = AgentLLM(config=config)
+        assert llm.base_url == "https://custom.api.com/v1"
+
+    def test_init_explicit_overrides_config(self):
+        """Test explicit params override Config"""
+        AgentLLM.register_provider("openai", MockLLMProvider())
+        config = self._config(api_key="from-config", default_model="from-config")
+        llm = AgentLLM(
+            provider="openai",
+            api_key="explicit-key",
+            model="explicit-model",
+            config=config,
+        )
+        assert llm.api_key == "explicit-key"
+        assert llm.model == "explicit-model"
+
+    def test_init_unregistered_provider_raises(self):
+        """Test unregistered provider raises ConfigError"""
+        config = self._config()
+        with pytest.raises(ConfigError, match="not registered"):
+            AgentLLM(provider="nonexistent", config=config)
+
+    def test_register_provider_classmethod(self):
+        """Test register_provider classmethod"""
+        provider = MockLLMProvider("custom response")
+        AgentLLM.register_provider("custom", provider)
+        config = self._config()
+        llm = AgentLLM(provider="custom", config=config)
+        assert llm._provider is provider
+
+
+class TestAgentLLMInvoke:
+    """Test AgentLLM.invoke()"""
+
+    def setup_method(self):
+        """Clean up and register mock provider"""
+        AgentLLM._registry = LLMProviderRegistry()
+        AgentLLM.register_provider("mock", MockLLMProvider("invoke response"))
+
+    def _config(self):
+        """Create a Config instance for testing"""
+        return Config(api_key="sk-test")
+
+    def test_invoke_returns_response(self):
+        config = self._config()
+        llm = AgentLLM(provider="mock", config=config)
+        resp = llm.invoke([{"role": "user", "content": "hi"}])
+        assert resp.content == "invoke response"
+
+    def test_invoke_passes_model(self):
+        config = self._config()
+        llm = AgentLLM(provider="mock", model="custom-model", config=config)
+        assert llm.model == "custom-model"
+
+    def test_stream_yields_chunks(self):
+        config = self._config()
+        llm = AgentLLM(provider="mock", config=config)
+        chunks = list(llm.stream([{"role": "user", "content": "hi"}]))
         assert len(chunks) == 2
         assert chunks[0].delta == "Hello"
         assert chunks[1].delta == " World"
