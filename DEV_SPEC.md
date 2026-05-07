@@ -1123,7 +1123,7 @@ observability:
 | A4 | LLMProvider 基类 + Registry | [x] | 2026-05-07 | LLMResponse/LLMChunk + ABC + Registry |
 | A5 | AgentLLM 门面 + 配置驱动 | [x] | 2026-05-07 | PROVIDER_CONFIG + invoke/stream |
 | A6 | OpenAIProvider（可插拔 Provider 示例实现） | [x] | 2026-05-07 | chat + chat_stream + LLMError |
-| A7 | Tool + ToolRegistry | [ ] | | |
+| A7 | Tool + ToolRegistry | [x] | 2026-05-07 | Tool基类 + ToolRegistry + 19 tests |
 | A8 | CalculatorTool + SearchTool | [ ] | | |
 | B1 | Agent 基类 + Message 系统 | [ ] | | |
 | B2 | SimpleAgent | [ ] | | |
