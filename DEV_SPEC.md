@@ -167,7 +167,7 @@ LLM Provider、Tool、MCP 外部服务均通过 Registry 接入。框架内核�
 
 ### 3.0 依赖清单（Dependency Manifest）
 
-> `pyproject.toml` 的 `[project.dependencies]` 和 `[project.optional-dependencies]` 必须按此表声明，不得遗漏或自行引入未列出的库。
+> `pyproject.toml` 的 `[project.dependencies]` 和 `[project.optional-dependencies]` 必须按此表声明，不得遗漏或自行引入未列出的库。同时维护 `requirements.txt`（核心依赖）和 `requirements-dev.txt`（含 `-r requirements.txt` + 开发依赖），让开源用户 `pip install -r requirements.txt` 即可快速搭建环境。
 
 #### 核心依赖（`pip install kagent`）
 
@@ -210,6 +210,18 @@ LLM Provider、Tool、MCP 外部服务均通过 Registry 接入。框架内核�
 | `sqlite3` | EpisodicMemory 持久化 | E |
 | `collections` | `OrderedDict`（WorkingMemory 容量淘汰） | E |
 | `typing` | 类型注解（`Literal`, `Iterator`, `Any`） | 全阶段 |
+
+#### requirements.txt
+
+```
+# pip install -r requirements.txt
+pydantic>=2.0
+openai>=1.0
+python-dotenv>=1.0
+httpx>=0.24
+```
+
+> `requirements.txt` 与 `pyproject.toml` 的 `[project.dependencies]` 必须保持同步。`requirements-dev.txt` 以 `-r requirements.txt` 开头，追加 dev 依赖。
 
 #### pyproject.toml 完整声明
 
@@ -867,7 +879,7 @@ kagent/                              # ★ = v0.1 MVP 文件
 │   ├── core/
 │   │   ├── __init__.py              ★
 │   │   ├── agent.py                 ★ Agent 抽象基类
-│   │   ├── llm.py                   ★ AgentLLM + LLMProvider + LLMProviderRegistry + OpenAIProvider
+│   │   ├── llm.py                   ★ AgentLLM + LLMProvider + LLMProviderRegistry + OpenAIProvider（首个可插拔实现）
 │   │   ├── message.py               ★ Message 类
 │   │   ├── config.py                ★ Config 类
 │   │   ├── exceptions.py            ★ KagentError / AgentError / LLMError / ToolError / ConfigError
@@ -927,6 +939,8 @@ kagent/                              # ★ = v0.1 MVP 文件
 │   └── fixtures/
 │       └── .env.test                ★
 ├── pyproject.toml                   ★
+├── requirements.txt                 ★ 核心依赖（开源用户 pip install -r requirements.txt）
+├── requirements-dev.txt             ★ 开发依赖（-r requirements.txt + pytest）
 ├── .env.example                     ★
 ├── .gitignore                       ★ (.venv/, .env, __pycache__/, *.egg-info/)
 └── README.md                        ★
@@ -1092,12 +1106,12 @@ observability:
 
 | 编号 | 任务 | 状态 | 完成日期 | 备注 |
 |------|------|------|---------|------|
-| A1 | 初始化目录树 | [x] | 2026-05-07 | |
-| A2 | 引入测试框架 | [x] | 2026-05-07 | |
-| A3 | .env 配置加载 | [ ] | | |
+| A1 | 初始化目录树 | [x] | 2026-05-07 | pyproject.toml + 目录骨架 + .env.example |
+| A2 | 引入测试框架 | [x] | 2026-05-07 | tests/ 目录 + smoke tests（pytest 待安装） |
+| A3 | .env 配置加载 | [x] | 2026-05-07 | Config 类 + from_env + validate |
 | A4 | LLMProvider 基类 + Registry | [ ] | | |
 | A5 | AgentLLM 门面 + 配置驱动 | [ ] | | |
-| A6 | OpenAIProvider | [ ] | | |
+| A6 | OpenAIProvider（可插拔 Provider 示例实现） | [ ] | | |
 | A7 | Tool + ToolRegistry | [ ] | | |
 | A8 | CalculatorTool + SearchTool | [ ] | | |
 | B1 | Agent 基类 + Message 系统 | [ ] | | |
@@ -1142,10 +1156,12 @@ observability:
 | 维度 | 内容 |
 |------|------|
 | 目标 | 创建 `kagent/` 目录骨架、`pyproject.toml`（含依赖）、`.env.example`、所有 `__init__.py`、创建 `.venv` 虚拟环境并安装依赖 |
-| 文件 | `pyproject.toml` `.env.example` `.gitignore`（含 `.venv/`、`.env`、`__pycache__/`） `kagent/__init__.py` `kagent/core/__init__.py` `kagent/agents/__init__.py` `kagent/tools/__init__.py` `kagent/tools/builtin/__init__.py` `kagent/memory/__init__.py` `kagent/context/__init__.py` |
+| 文件 | `pyproject.toml` `requirements.txt` `requirements-dev.txt` `.env.example` `.gitignore`（含 `.venv/`、`.env`、`__pycache__/`） `kagent/__init__.py` `kagent/core/__init__.py` `kagent/agents/__init__.py` `kagent/tools/__init__.py` `kagent/tools/builtin/__init__.py` `kagent/memory/__init__.py` `kagent/context/__init__.py` |
 | pyproject.toml 依赖 | 按 §3.0 依赖清单完整声明，不得遗漏或自行引入未列出的库 |
+| requirements.txt | 与 `pyproject.toml` 的 `[project.dependencies]` 保持一致，开源用户 `pip install -r requirements.txt` 即可 |
+| requirements-dev.txt | `-r requirements.txt` + `[project.optional-dependencies].dev` 中的包 |
 | .env.example | `LLM_PROVIDER=openai` `LLM_MODEL_ID=gpt-4o` `LLM_API_KEY=your-api-key-here` `LLM_BASE_URL=https://api.openai.com/v1` `LLM_TIMEOUT=60` `SEARCH_BACKEND=serpapi` `SERPAPI_API_KEY=` `TAVILY_API_KEY=` `TRACE_ENABLED=true` `TRACE_EXPORT=console` `LOG_LEVEL=INFO` `DEBUG=false` `MAX_HISTORY_LENGTH=50` `MAX_STEPS=5` |
-| 验收 | `python -m venv .venv && source .venv/bin/activate && pip install -e ".[dev]"` 成功 `python -c "import kagent"` 不报错 `python -c "import kagent.memory; import kagent.context"` 不报错 `pyproject.toml` 包含全部依赖 `pytest -q tests/unit/test_smoke.py` 通过 |
+| 验收 | `python -m venv .venv && source .venv/bin/activate && pip install -r requirements-dev.txt` 成功 `pip install -e ".[dev]"` 成功 `python -c "import kagent"` 不报错 `python -c "import kagent.memory; import kagent.context"` 不报错 `pyproject.toml` 包含全部依赖 `requirements.txt` 与 `pyproject.toml` 的 `[project.dependencies]` 一致 `pytest -q tests/unit/test_smoke.py` 通过 |
 | 测试 | `python -m compileall kagent/` |
 
 
@@ -1193,17 +1209,17 @@ observability:
 | 测试 | `pytest -q tests/unit/test_llm.py -k "test_agent_llm_init"` |
 
 
-### A6：OpenAIProvider
+### A6：OpenAIProvider（可插拔 Provider 示例实现）
 
 | 维度 | 内容 |
 |------|------|
-| 目标 | 实现 OpenAI 兼容 Provider（v0.1 MVP 只需这一个 Provider） |
+| 目标 | 实现首个具体 Provider，验证 A4/A5 的可插拔架构可用：实现 `LLMProvider` 接口 → 注册到 `LLMProviderRegistry` → 改 `.env` 一行配置即可切换。OpenAI 兼容接口作为 v0.1 MVP 的默认实现，但架构上不绑定任何特定服务商 |
 | 文件 | `kagent/core/llm.py` |
-| 类/函数 | `OpenAIProvider(api_key, base_url, timeout)` — 实现 `LLMProvider.chat() -> LLMResponse` + `chat_stream() -> Iterator[LLMChunk]`，内部使用 `openai` SDK 的 `chat.completions.create` |
-| 验收 | Mock OpenAI API 响应 → `provider.chat()` 返回 `LLMResponse(content="...")` `provider.chat_stream()` yield 多个 `LLMChunk` API 超时 → 抛 `LLMError` |
+| 类/函数 | `OpenAIProvider(api_key, base_url, timeout)` — 实现 `LLMProvider.chat() -> LLMResponse` + `chat_stream() -> Iterator[LLMChunk]`，内部使用 `openai` SDK 的 `chat.completions.create`。构造函数参数全部从 `PROVIDER_CONFIG` + `.env` 自动注入，用户无需手写 |
+| 验收 | Mock OpenAI API 响应 → `provider.chat()` 返回 `LLMResponse(content="...")` `provider.chat_stream()` yield 多个 `LLMChunk` API 超时 → 抛 `LLMError` 验证：切换 `LLM_PROVIDER=ollama` + `LLM_BASE_URL=http://localhost:11434/v1` 后，只需实现一个新的 `OllamaProvider(LLMProvider)` 并注册，Agent 代码零改动 |
 | 测试 | `pytest -q tests/unit/test_llm.py -k "test_openai_provider"` |
 
-> **注意**：OllamaProvider / ModelScopeProvider / ZhipuProvider / VLLMProvider 属于 v0.2+（C4 任务），A6 只实现 `OpenAIProvider`。不要超前实现。
+> **可插拔验证**：A6 的核心价值是证明"写一个类 + 一行注册 = 接入新服务商"的架构可行。OllamaProvider / ZhipuProvider 等在 C4 实现，但只需实现 `LLMProvider` 接口并注册即可，Agent 层代码零改动。
 
 
 ### A7：Tool 基类 + ToolRegistry
