@@ -878,12 +878,23 @@ kagent/                              # ★ = v0.1 MVP 文件
 ├── kagent/
 │   ├── core/
 │   │   ├── __init__.py              ★
-│   │   ├── agent.py                 ★ Agent 抽象基类
-│   │   ├── llm.py                   ★ AgentLLM + LLMProvider + LLMProviderRegistry + OpenAIProvider（首个可插拔实现）
-│   │   ├── message.py               ★ Message 类
 │   │   ├── config.py                ★ Config 类
 │   │   ├── exceptions.py            ★ KagentError / AgentError / LLMError / ToolError / ConfigError
-│   │   └── tracing.py               ★ Tracer + Span + TraceExporter
+│   │   ├── llm/                     ★ LLM 调用层（可插拔注册制）
+│   │   │   ├── __init__.py          ★ 统一导出
+│   │   │   ├── models.py            ★ LLMResponse + LLMChunk
+│   │   │   ├── base.py              ★ LLMProvider(ABC) + LLMProviderRegistry
+│   │   │   ├── factory.py           ★ AgentLLM + PROVIDER_CONFIG
+│   │   │   └── providers.py         ★ OpenAIProvider（可插拔实现）
+│   │   ├── agent/                   ★ Agent 基类 + Message 系统
+│   │   │   ├── __init__.py          ★
+│   │   │   ├── base.py              ★ Agent(ABC)
+│   │   │   └── message.py           ★ Message 类
+│   │   └── tracing/                 ★ 链路追踪
+│   │       ├── __init__.py          ★
+│   │       ├── models.py            ★ Span + SpanType + SpanStatus
+│   │       ├── tracer.py            ★ Tracer 单例
+│   │       └── exporter.py          ★ TraceExporter
 │   ├── agents/
 │   │   ├── __init__.py              ★
 │   │   ├── simple_agent.py          ★ SimpleAgent
@@ -1111,7 +1122,7 @@ observability:
 | A3 | .env 配置加载 | [x] | 2026-05-07 | Config 类 + from_env + validate |
 | A4 | LLMProvider 基类 + Registry | [x] | 2026-05-07 | LLMResponse/LLMChunk + ABC + Registry |
 | A5 | AgentLLM 门面 + 配置驱动 | [x] | 2026-05-07 | PROVIDER_CONFIG + invoke/stream |
-| A6 | OpenAIProvider（可插拔 Provider 示例实现） | [ ] | | |
+| A6 | OpenAIProvider（可插拔 Provider 示例实现） | [x] | 2026-05-07 | chat + chat_stream + LLMError |
 | A7 | Tool + ToolRegistry | [ ] | | |
 | A8 | CalculatorTool + SearchTool | [ ] | | |
 | B1 | Agent 基类 + Message 系统 | [ ] | | |

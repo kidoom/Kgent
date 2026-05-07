@@ -87,12 +87,23 @@ kagent/                              # ★ = v0.1 MVP 文件
 ├── kagent/
 │   ├── core/
 │   │   ├── __init__.py              ★
-│   │   ├── agent.py                 ★ Agent 抽象基类
-│   │   ├── llm.py                   ★ AgentLLM + LLMProvider + LLMProviderRegistry + OpenAIProvider
-│   │   ├── message.py               ★ Message 类
 │   │   ├── config.py                ★ Config 类
 │   │   ├── exceptions.py            ★ KagentError / AgentError / LLMError / ToolError / ConfigError
-│   │   └── tracing.py               ★ Tracer + Span + TraceExporter
+│   │   ├── llm/                     ★ LLM 调用层（可插拔注册制）
+│   │   │   ├── __init__.py          ★ 统一导出
+│   │   │   ├── models.py            ★ LLMResponse + LLMChunk
+│   │   │   ├── base.py              ★ LLMProvider(ABC) + LLMProviderRegistry
+│   │   │   ├── factory.py           ★ AgentLLM + PROVIDER_CONFIG
+│   │   │   └── providers.py         ★ OpenAIProvider（可插拔实现）
+│   │   ├── agent/                   ★ Agent 基类 + Message 系统
+│   │   │   ├── __init__.py          ★
+│   │   │   ├── base.py              ★ Agent(ABC)
+│   │   │   └── message.py           ★ Message 类
+│   │   └── tracing/                 ★ 链路追踪
+│   │       ├── __init__.py          ★
+│   │       ├── models.py            ★ Span + SpanType + SpanStatus
+│   │       ├── tracer.py            ★ Tracer 单例
+│   │       └── exporter.py          ★ TraceExporter
 │   ├── agents/
 │   │   ├── __init__.py              ★
 │   │   ├── simple_agent.py          ★ SimpleAgent
@@ -148,6 +159,8 @@ kagent/                              # ★ = v0.1 MVP 文件
 │   └── fixtures/
 │       └── .env.test                ★
 ├── pyproject.toml                   ★
+├── requirements.txt                 ★ 核心依赖（开源用户 pip install -r requirements.txt）
+├── requirements-dev.txt             ★ 开发依赖（-r requirements.txt + pytest）
 ├── .env.example                     ★
 ├── .gitignore                       ★ (.venv/, .env, __pycache__/, *.egg-info/)
 └── README.md                        ★

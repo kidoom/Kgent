@@ -3,15 +3,17 @@
 import os
 import pytest
 from typing import Iterator
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 from kagent.core.config import Config, ConfigError
+from kagent.core.exceptions import LLMError
 from kagent.core.llm import (
     LLMResponse,
     LLMChunk,
     LLMProvider,
     LLMProviderRegistry,
     AgentLLM,
+    OpenAIProvider,
 )
 
 
@@ -280,3 +282,122 @@ class TestAgentLLMInvoke:
         assert len(chunks) == 2
         assert chunks[0].delta == "Hello"
         assert chunks[1].delta == " World"
+
+
+class TestOpenAIProvider:
+    """Test OpenAIProvider with mocked OpenAI SDK"""
+
+    def provider(self):
+        return OpenAIProvider(
+            api_key="sk-test", base_url="https://api.openai.com/v1"
+        )
+
+    def test_chat_returns_response(self):
+        """Test chat returns LLMResponse with mocked OpenAI"""
+        mock_msg = MagicMock()
+        mock_msg.content = "hello from openai"
+        mock_msg.tool_calls = None
+
+        mock_choice = MagicMock()
+        mock_choice.message = mock_msg
+
+        mock_completion = MagicMock()
+        mock_completion.choices = [mock_choice]
+        mock_completion.usage = MagicMock()
+        mock_completion.usage.prompt_tokens = 10
+        mock_completion.usage.completion_tokens = 5
+        mock_completion.usage.total_tokens = 15
+
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = mock_completion
+
+        with patch("openai.OpenAI", return_value=mock_client):
+            provider = self.provider()
+            resp = provider.chat(
+                messages=[{"role": "user", "content": "hi"}],
+                model="gpt-4o",
+                temperature=0.0,
+            )
+
+        assert resp.content == "hello from openai"
+        assert resp.usage == {"prompt": 10, "completion": 5, "total": 15}
+
+    def test_chat_with_tool_calls(self):
+        """Test chat extracts tool_calls correctly"""
+        mock_tc = MagicMock()
+        mock_tc.id = "call_1"
+        mock_tc.function.name = "test_tool"
+        mock_tc.function.arguments = '{"arg": "value"}'
+
+        mock_msg = MagicMock()
+        mock_msg.content = ""
+        mock_msg.tool_calls = [mock_tc]
+
+        mock_choice = MagicMock()
+        mock_choice.message = mock_msg
+
+        mock_completion = MagicMock()
+        mock_completion.choices = [mock_choice]
+        mock_completion.usage = None
+
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = mock_completion
+
+        with patch("openai.OpenAI", return_value=mock_client):
+            provider = self.provider()
+            resp = provider.chat(
+                messages=[{"role": "user", "content": "call test_tool"}],
+                model="gpt-4o",
+                temperature=0.0,
+            )
+
+        assert len(resp.tool_calls) == 1
+        assert resp.tool_calls[0]["id"] == "call_1"
+        assert resp.tool_calls[0]["function"]["name"] == "test_tool"
+
+    def test_chat_stream_yields_chunks(self):
+        """Test chat_stream yields LLMChunks"""
+        chunk1 = MagicMock()
+        chunk1.choices = [MagicMock()]
+        chunk1.choices[0].delta.content = "Hello"
+        chunk1.usage = None
+
+        chunk2 = MagicMock()
+        chunk2.choices = [MagicMock()]
+        chunk2.choices[0].delta.content = " World"
+        chunk2.usage = MagicMock()
+        chunk2.usage.prompt_tokens = 10
+        chunk2.usage.completion_tokens = 5
+        chunk2.usage.total_tokens = 15
+
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = [chunk1, chunk2]
+
+        with patch("openai.OpenAI", return_value=mock_client):
+            provider = self.provider()
+            chunks = list(
+                provider.chat_stream(
+                    messages=[{"role": "user", "content": "hi"}],
+                    model="gpt-4o",
+                    temperature=0.0,
+                )
+            )
+
+        assert len(chunks) == 2
+        assert chunks[0].delta == "Hello"
+        assert chunks[1].delta == " World"
+        assert chunks[1].usage == {"prompt": 10, "completion": 5, "total": 15}
+
+    def test_chat_api_error_raises_llm_error(self):
+        """Test API error raises LLMError"""
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.side_effect = Exception("Connection timeout")
+
+        with patch("openai.OpenAI", return_value=mock_client):
+            provider = self.provider()
+            with pytest.raises(LLMError, match="Connection timeout"):
+                provider.chat(
+                    messages=[{"role": "user", "content": "hi"}],
+                    model="gpt-4o",
+                    temperature=0.0,
+                )

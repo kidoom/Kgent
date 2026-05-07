@@ -6,10 +6,7 @@ from typing import Optional
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
-
-class ConfigError(Exception):
-    """Configuration validation error"""
-    pass
+from .exceptions import ConfigError
 
 
 class Config(BaseModel):
