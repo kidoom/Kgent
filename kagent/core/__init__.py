@@ -9,6 +9,8 @@ from .llm import (
     AgentLLM,
     OpenAIProvider,
 )
+from .message import Message
+from .agent import Agent
 
 __all__ = [
     "Config",
@@ -20,4 +22,6 @@ __all__ = [
     "LLMProviderRegistry",
     "AgentLLM",
     "OpenAIProvider",
+    "Message",
+    "Agent",
 ]
