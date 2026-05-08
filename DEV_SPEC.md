@@ -17,7 +17,7 @@
 ```
 v0.1 Kagent Core MVP — 进行中
   阶段 A [████████] 8/8  ✅ 工程骨架 + LLM 可插拔 + 工具可插拔
-  阶段 B [█·······] 1/3  🟡 Agent 范式（B1 已实现待 commit；B2 / B3 未开始）
+  阶段 B [████████] 3/3  ✅ Agent 范式（B1 + B2 + B3 全部完成）
   阶段 C [········] 0/4  ⬜ 框架化加固（仅 C1-C3 + C8 在 MVP 内）
 v0.2+ — 未启动
   v0.2 Kagent Core 增强（C4-C7 + C9：多 Provider / 5 范式齐备）
@@ -54,7 +54,7 @@ v0.2+ — 未启动
 | C2 | 升级 KagentError 为双字段（user_message / debug_message） | `kagent/core/exceptions.py` + 所有 raise 处 | `tests/unit/test_exceptions.py` | B3 | ★ |
 | C3 | Agent 基类注入 Config + custom_prompt + run_id | `kagent/core/agent.py` | `tests/unit/test_agent.py::TestAgentConfig, TestCustomPrompt` | B1, A3 | ★ |
 | C4 | 多 Provider（Ollama/VLLM/Zhipu）+ auto-detect | `kagent/core/llm/{factory,providers}.py` | `tests/unit/test_llm.py::TestAutoDetect` | A5, A6 | ◇ |
-| C5 | ToolRegistry 双注册 + 加锁 | `kagent/tools/registry.py` | `tests/unit/test_tools.py::TestRegistryFramework` | A7 | ◇ |
+| C5 | ToolRegistry 双注册 + 裸函数拔除 | `kagent/tools/registry.py` | `tests/unit/test_tools.py::TestRegistryFramework` | A7 | ◇ |
 | C6 | SimpleAgent 框架化 | `kagent/agents/simple_agent.py` | `tests/unit/test_agent.py::TestSimpleAgent`（扩展） | B2, C2, C3 | ◇ |
 | C7 | ReActAgent 框架化（含 custom_prompt 模板） | `kagent/agents/react_agent.py` | `tests/unit/test_agent.py::TestReActAgent`（扩展） | B3, C2, C3 | ◇ |
 | C8 | pip install -e . 验证 + 最小 README | `pyproject.toml` `README.md` | `tests/integration/test_{framework_import,pip_install}.py` | C1-C3 | ★ |
@@ -129,7 +129,7 @@ LLM Provider、Tool、MCP 外部服务均通过 Registry 接入。框架内核�
 
 #### 2）配置驱动（"切换只改配置表，代码零改动"）
 
-所有行为由 `settings.yaml` / `.env` 控制：LLM Provider 选择、Provider 凭证、模型 ID、工具开关、日志级别等。
+v0.1 所有行为由 `.env` 控制：LLM Provider 选择、Provider 凭证、模型 ID、工具开关、日志级别等。v0.3+ 再引入 `settings.yaml` 承载静态行为与组合配置。
 
 #### 3）链路追踪是基础设施（"Agent 出问题不靠 print 大海捞针"）
 
@@ -287,8 +287,9 @@ LLM Provider、Tool、MCP 外部服务均通过 Registry 接入。框架内核�
 | `openai` | `>=1.0` | OpenAI 兼容 LLM 调用（`chat.completions.create`），自带 `httpx` 作为 transitive 依赖 | A6 |
 | `pydantic` | `>=2.0` | 数据模型校验（`BaseModel`, `Field`, `ValidationError`） | A3 |
 | `python-dotenv` | `>=1.0` | `.env` 文件加载到 `os.environ` | A3 |
+| `tavily-python` | `>=0.3` | SearchTool 默认 `tavily` 后端客户端；真实调用测试需 `TAVILY_API_KEY` 且标记 `external` | A8 |
 
-> 不在 v0.1 直接依赖里：`httpx`（OpenAI SDK 已 transitive 引入；如需自建 HTTP 客户端再显式加）；`pyyaml`（settings.yaml 推迟到 v0.3+）；`requests`（标准库 `urllib.request` 已够用，搜索工具用它）。
+> 不在 v0.1 直接依赖里：`httpx`（OpenAI SDK 已 transitive 引入；如需自建 HTTP 客户端再显式加）；`pyyaml`（settings.yaml 推迟到 v0.3+）；`requests`（SerpApi 备用后端用标准库 `urllib.request`）。
 
 #### v0.2+ 可选依赖（`pip install kagent[mcp]` / `kagent[memory]` / `kagent[examples]`）
 
@@ -314,7 +315,7 @@ LLM Provider、Tool、MCP 外部服务均通过 Registry 接入。框架内核�
 |------|------|---------|
 | `ast` | CalculatorTool 安全表达式解析 | A8 |
 | `math`, `operator` | CalculatorTool 数学函数 + 操作符表 | A8 |
-| `urllib.request`, `urllib.parse`, `json` | SearchTool（SerpApi）HTTP 调用 | A8 |
+| `urllib.request`, `urllib.parse`, `json` | SearchTool（SerpApi 备用后端）HTTP 调用 | A8 |
 | `re` | Agent 输出正则解析（Thought/Action 提取） | B |
 | `uuid` | `run_id` 生成、`trace_id` / `span_id` 生成 | C / D |
 | `dataclasses` | `Span` 数据类定义（`@dataclass` + `field`） | D |
@@ -325,7 +326,7 @@ LLM Provider、Tool、MCP 外部服务均通过 Registry 接入。框架内核�
 | `collections` | `OrderedDict`（WorkingMemory 容量淘汰） | E |
 | `typing` | 类型注解（`Literal`, `Iterator`, `Any`） | 全阶段 |
 | `importlib` | A5 PROVIDER_CONFIG.class 反射 lazy-load | A5 |
-| `threading` | ToolRegistry 注册/注销加锁（v0.3+ 多线程场景） | D |
+| `threading` | ToolRegistry 注册/注销加锁（v0.3+ 多线程场景，D7） | D |
 
 
 #### pyproject.toml 完整声明（v0.1）
@@ -344,6 +345,7 @@ dependencies = [
     "openai>=1.0",
     "pydantic>=2.0",
     "python-dotenv>=1.0",
+    "tavily-python>=0.3",
 ]
 
 [project.optional-dependencies]
@@ -512,9 +514,9 @@ class Tool(ABC):
     def to_openai_schema(self) -> dict: ...  # 用于 FunctionCallAgent
 ```
 
-**配置：**
+**配置（v0.3+ 预留；v0.1 仅使用 `.env`，见 §5.4）：**
 ```yaml
-# settings.yaml
+# settings.yaml（v0.3+）
 tools:
   builtin:
     - calculator
@@ -1325,22 +1327,22 @@ observability:
 
 | 编号 | 任务 | 状态 | 完成日期 | 备注 |
 |------|------|------|---------|------|
-| A1 | 初始化目录树 | [x] | 2026-05-07 | pyproject.toml + 目录骨架 + .env.example **⚠️ 待修：build-backend 应为 `setuptools.build_meta`** |
+| A1 | 初始化目录树 | [x] | 2026-05-07 | pyproject.toml + 目录骨架 + .env.example；build-backend 已统一为 `setuptools.build_meta` |
 | A2 | 引入测试框架 | [x] | 2026-05-07 | tests/ 目录 + smoke tests |
 | A3 | .env 配置加载 | [x] | 2026-05-07 | Config 类 + from_env + validate |
 | A4 | LLMProvider 基类 + Registry | [x] | 2026-05-07 | LLMResponse/Chunk + ABC + Registry |
-| A5 | AgentLLM 门面 + 配置驱动 | [x] | 2026-05-07 | PROVIDER_CONFIG + invoke/stream **⚠️ 待修：补 lazy-load（`class` 字段反射 import + auto-register）** |
-| A6 | OpenAIProvider | [x] | 2026-05-07 | chat + chat_stream + LLMError **⚠️ 待修：client 在 `__init__` 创建一次复用，传入 timeout** |
+| A5 | AgentLLM 门面 + 配置驱动 | [x] | 2026-05-07 | PROVIDER_CONFIG + invoke/stream；已支持 `class` 字段 lazy-load + auto-register |
+| A6 | OpenAIProvider | [x] | 2026-05-07 | chat + chat_stream + LLMError；client 在 `__init__` 创建并复用，支持 timeout |
 | A7 | Tool + ToolRegistry | [x] | 2026-05-07 | Tool基类 + 生命周期管理（含 enable/disable，超出 spec 原计划） |
-| A8 | CalculatorTool + SearchTool | [x] | 2026-05-07 | AST安全解析 + Tavily/SerpApi **⚠️ 待修：拆 `_CONSTANTS` / `_FUNCTIONS`，移除 `pi()` 写法；默认后端改 tavily** |
+| A8 | CalculatorTool + SearchTool | [x] | 2026-05-07 | AST安全解析 + Tavily/SerpApi；常量/函数表分离，默认后端 `tavily` |
 
 #### 阶段 B — Agent 范式实现
 
 | 编号 | 任务 | 状态 | 完成日期 | 备注 |
 |------|------|------|---------|------|
-| B1 | Agent 基类 + Message 系统 | [x] | 2026-05-07 | **⚠️ 已实现待 commit**（git untracked） |
-| B2 | SimpleAgent | [ ] | | |
-| B3 | ReActAgent | [ ] | | |
+| B1 | Agent 基类 + Message 系统 | [x] | 2026-05-07 | 已提交：Agent ABC + Message(BaseModel) + history 基础能力 |
+| B2 | SimpleAgent | [x] | 2026-05-07 | Prompt 约束式工具调用 `[TOOL_CALL:name:params]` |
+| B3 | ReActAgent | [x] | 2026-05-07 | Thought→Action→Observation 循环，`Action: Finish[answer]` 终止 |
 | B4 | PlanAndSolveAgent | [ ] | | v0.2+ |
 | B5 | ReflectionAgent | [ ] | | v0.2+ |
 | B6 | FunctionCallAgent | [ ] | | v0.2+ |
@@ -1353,7 +1355,7 @@ observability:
 | C2 | Config 类 + 异常体系 | [ ] | | |
 | C3 | Agent 基类框架化 | [ ] | | |
 | C4 | AgentLLM 框架化（多 Provider） | [ ] | | |
-| C5 | ToolRegistry 框架化（双注册） | [ ] | | |
+| C5 | ToolRegistry 框架化（双注册 + 裸函数拔除） | [ ] | | v0.2：不含加锁；加锁归 D7 |
 | C6 | SimpleAgent 框架化 | [ ] | | |
 | C7 | ReActAgent 框架化 | [ ] | | |
 | C8 | pip install 验证 | [ ] | | |
@@ -1489,7 +1491,7 @@ observability:
 | 目标 | 实现两个内置工具作为 Tool 子类示例 |
 | 文件 | `kagent/tools/builtin/calculator.py` `kagent/tools/builtin/search.py` `kagent/tools/builtin/__init__.py`（导出） |
 | 依赖 | A7 (Tool 基类) |
-| 类/函数 | **CalculatorTool(Tool)** — `run({"expression": "2+3*4"}) -> ToolResult`，用 `ast` 安全解析。常量与函数表分离：`_CONSTANTS = {"pi": math.pi, "e": math.e}`（被 `ast.Name` 解析），`_FUNCTIONS = {"sqrt", "sin", "cos", "tan", "log", "log10", "log2", "exp", "abs", "round", "min", "max", "pow"}`（被 `ast.Call` 解析）。**不要把 pi/e 也注册成函数**（避免 `pi()` 这种奇怪写法）。`SearchTool(Tool)` — v0.1 使用单一搜索后端，**默认 `SEARCH_BACKEND=tavily`**（与 .env.example 一致），由 `SEARCH_BACKEND` env + 对应 API Key 决定后端，不做降级链 |
+| 类/函数 | **CalculatorTool(Tool)** — `run({"expression": "2+3*4"}) -> ToolResult`，用 `ast` 安全解析。常量与函数表分离：`_CONSTANTS = {"pi": math.pi, "e": math.e}`（被 `ast.Name` 解析），`_FUNCTIONS = {"sqrt", "sin", "cos", "tan", "log", "log10", "log2", "exp", "abs", "round", "min", "max", "pow"}`（被 `ast.Call` 解析）。**不要把 pi/e 也注册成函数**（避免 `pi()` 这种奇怪写法）。`SearchTool(Tool)` — v0.1 使用单一搜索后端，**默认 `SEARCH_BACKEND=tavily`**（与 .env.example 一致），Tavily 依赖 `tavily-python>=0.3`，SerpApi 备用后端用标准库 `urllib.request`；由 `SEARCH_BACKEND` env + 对应 API Key 决定后端，不做降级链 |
 | 验收 | `calculator.run({"expression": "2+3*4"}).content == "14"`；`sqrt(16)` → `"4.0"`；`sin(pi/2)` → `"1.0"`（pi 作为常量）；`pi()` → 失败（"不支持的函数: pi"）；`1/0` → `success=False, content` 含 "除数不能为零"。`search.run({"query": "Python"})` 返回 `ToolResult(success=True, content=非空)`（需配置 API Key）；未配置 API Key → 返回 `ToolResult(success=False, content="[ERROR] 搜索 API Key 未配置，请在 .env 中设置 ..."`） |
 | 测试 | `pytest -q tests/unit/test_tools.py -k "TestCalculatorTool or TestSearchTool"` |
 
@@ -1621,8 +1623,9 @@ observability:
 |------|------|
 | 目标 | 升级 ToolRegistry 支持 Tool 对象 + 裸函数双重注册 |
 | 文件 | `kagent/tools/registry.py` |
-| 类/函数 | `ToolRegistry._tools: dict` + `ToolRegistry._functions: dict` `register_tool(tool: Tool)` / `register_function(name, desc, func)` `get_tools_description()` — 合并两种来源 |
-| 验收 | 同时注册 Tool 对象和裸函数 → `get_tools_description()` 包含两者 `unregister` 后 description 不包含该工具 |
+| 类/函数 | `ToolRegistry._tools: dict` + `ToolRegistry._functions: dict` `register_tool(tool: Tool)` / `register_function(name, desc, func)` / `unregister(name)` 同时移除两类来源；`get_tools_description()` — 合并两种来源 |
+| 边界 | 本任务不做并发加锁；`threading.Lock` 属于 D7 容错增量 |
+| 验收 | 同时注册 Tool 对象和裸函数 → `get_tools_description()` 包含两者；`unregister` 后 description 不包含该工具，且后续 `execute_tool` 返回未注册错误 |
 | 测试 | `pytest -q tests/unit/test_tools.py -k "test_registry_framework"` |
 
 

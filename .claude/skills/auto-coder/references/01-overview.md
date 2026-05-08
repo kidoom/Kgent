@@ -18,7 +18,7 @@ LLM Provider、Tool、MCP 外部服务均通过 Registry 接入。框架内核�
 
 #### 2）配置驱动（"切换只改配置表，代码零改动"）
 
-所有行为由 `settings.yaml` / `.env` 控制：LLM Provider 选择、Provider 凭证、模型 ID、工具开关、日志级别等。
+v0.1 所有行为由 `.env` 控制：LLM Provider 选择、Provider 凭证、模型 ID、工具开关、日志级别等。v0.3+ 再引入 `settings.yaml` 承载静态行为与组合配置。
 
 #### 3）链路追踪是基础设施（"Agent 出问题不靠 print 大海捞针"）
 
@@ -34,15 +34,24 @@ LLM Provider、Tool、MCP 外部服务均通过 Registry 接入。框架内核�
 
 ### 1.4 范围边界
 
-**v0.1 MVP 必须完成：**
+**v0.1 MVP 必须完成（= Kagent Core 子项目）：**
 - pip 可安装的 `kagent` 包与最小目录骨架
-- LLM Provider 抽象、注册中心、OpenAI 兼容 Provider、配置驱动选择
-- Tool 抽象、ToolRegistry、CalculatorTool、SearchTool（真实外部搜索测试可跳过）
+- LLM Provider 抽象、注册中心、OpenAI 兼容 Provider、配置驱动选择（含 PROVIDER_CONFIG 自动 lazy-load）
+- Tool 抽象、ToolRegistry、CalculatorTool、SearchTool（真实外部搜索测试 `external` 标记，CI 跳过）
 - SimpleAgent / ReActAgent 两种基础 Agent
-- Tracer / Span / TraceExporter 基础链路追踪
-- 单元测试、Mock 集成测试、最小 README 示例
+- Config 类 + KagentError 异常体系（双字段 user_message / debug_message）
+- `pip install -e .` 后 `from kagent import SimpleAgent, ReActAgent, AgentLLM, Config` 可用
+- 单元测试 ≥ 55 用例 + Mock 集成测试 ≥ 8 用例 + 最小 README 示例
 
-**MVP 硬截止线：A1-A8 + B1-B3 + C1-C3 + C8（Config + 异常体系 + pip install 验证）。** C4-C7/C9（多 Provider 扩展、Agent 加固）以及 D/E/F 阶段全部属于 v0.2+。
+**MVP 硬截止线：A1-A8 + B1-B3 + C1-C3 + C8。** C4/C5/C6/C7/C9（多 Provider 扩展、Agent 进一步加固）以及 D/E/F 阶段全部属于 v0.2+。
+
+**显式不在 v0.1 范围内：**
+- ❌ Tracer / Span / TraceExporter — v0.3 Observability 子项目（D 阶段）
+- ❌ MCPTool / MCP 容错与重连 — v0.3（D 阶段）
+- ❌ PlanAndSolveAgent / ReflectionAgent / FunctionCallAgent — v0.2 Core 增强（B4-B6 + C9）
+- ❌ Memory 系统 / ContextBuilder — v0.4 Memory 子项目（E 阶段）
+- ❌ settings.yaml 分层配置 — v0.3+ 引入（v0.1 仅 .env，见 §5.4）
+- ❌ 实战项目（旅行助手 / 深度研究 / 赛博小镇）— v0.5 Examples 子项目（F 阶段）
 
 ### 1.4.1 子项目分解
 
@@ -58,11 +67,11 @@ LLM Provider、Tool、MCP 外部服务均通过 Registry 接入。框架内核�
 每个子项目应在完成前一个之后再启动（Core → Observability → Memory → Examples）。Memory 和 Observability 可并行。
 
 **v0.1 范围内（＝ MVP 硬截止线以上）：**
-- LLM 调用层（可插拔 Provider 注册制，内置 OpenAI，其余 Provider 为 v0.2+）
+- LLM 调用层（可插拔 Provider 注册制 + PROVIDER_CONFIG 自动 lazy-load，内置 OpenAI，其余 Provider 为 v0.2+）
 - 2 种 Agent 范式（SimpleAgent / ReActAgent）
-- 可插拔工具系统（本地 Tool + 裸函数注册）
-- 基础链路追踪（Tracer + Span + TraceExporter）
-- Config 类 + 异常体系 + pip install
+- 可插拔工具系统（本地 Tool + 裸函数注册 + 工具 lifecycle: enable/disable）
+- Config 类 + KagentError 异常体系（双字段）+ pip install -e .
+- 内置工具：CalculatorTool（AST 安全求值）+ SearchTool（SerpApi/Tavily 二选一）
 
 **v0.2+（后续版本，不在本 spec 的实施范围内）：**
 - 5 种 Agent 范式补齐（PlanAndSolveAgent / ReflectionAgent / FunctionCallAgent）
@@ -73,10 +82,10 @@ LLM Provider、Tool、MCP 外部服务均通过 Registry 接入。框架内核�
 - 3 个实战参考项目（旅行助手 / 深度研究 / 赛博小镇）
 
 **v0.1 后续路线：**
-- v0.2（子项目：Kagent Core 增强）：多 Provider（ModelScope/Zhipu/Ollama/VLLM + auto-detect）、FunctionCallAgent + PlanAndSolveAgent + ReflectionAgent
-- v0.3（子项目：Kagent Observability）：MCPTool、并行工具调用、容错重试、监控告警
-- v0.4（子项目：Kagent Memory）：MemoryManager、Working/Episodic/Semantic Memory、ContextBuilder
-- examples（子项目：Examples）：旅行助手 / 深度研究 / 赛博小镇作为框架能力验收样例，不阻塞核心包发布
+- **v0.2 — Kagent Core 增强**（C4-C7 + C9）：多 Provider（ModelScope/Zhipu/Ollama/VLLM + auto-detect）、PlanAndSolveAgent / ReflectionAgent / FunctionCallAgent 三种范式补齐
+- **v0.3 — Kagent Observability**（D 阶段全部）：Tracer / TraceExporter / Agent 埋点、MCPTool + MCP Server 模板、容错重试与缓存、监控（Token 统计 + run_id + 结构化日志）
+- **v0.4 — Kagent Memory**（E 阶段全部）：BaseMemory / MemoryManager / Working / Episodic / Semantic、MemoryTool、ContextBuilder（GSSC）、NoteTool / TerminalTool
+- **v0.5 — Examples**（F 阶段全部）：旅行助手 / 深度研究 / 赛博小镇骨架，作为框架能力验收样例，不阻塞核心包发布
 
 **明确排除：**
 - RAG 引擎实现 — 用户自有 RAG 项目通过 MCP 接入
