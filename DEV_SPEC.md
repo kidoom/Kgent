@@ -1,9 +1,111 @@
 # DEV_SPEC: Kagent
-> Version: 0.1 Draft — 2026-05-06
+> Version: 0.2 Draft — 2026-05-07
 > 项目类型：Library/SDK（AI Agent 框架）
 > 参考文档：Hello-Agents框架实现全景文档.md
 
 > 命名约定：项目名使用 `Kagent`，Python 包名与 import 路径使用 `kagent`。
+
+---
+
+## 0. 速查索引（auto-coder 与新人开发者从这里开始）
+
+> 本节是项目的"导航面板"。每个任务的**目标 / 文件 / 测试 / 依赖**一行可见，详细契约请跳转对应章节。
+> **修改 spec 时，本节必须与 §5.2 目录结构、§6.3 任务卡保持一致**。
+
+### 0.1 当前进度（截至 2026-05-07）
+
+```
+v0.1 Kagent Core MVP — 进行中
+  阶段 A [████████] 8/8  ✅ 工程骨架 + LLM 可插拔 + 工具可插拔
+  阶段 B [█·······] 1/3  🟡 Agent 范式（B1 已实现待 commit；B2 / B3 未开始）
+  阶段 C [········] 0/4  ⬜ 框架化加固（仅 C1-C3 + C8 在 MVP 内）
+v0.2+ — 未启动
+  v0.2 Kagent Core 增强（C4-C7 + C9：多 Provider / 5 范式齐备）
+  v0.3 Kagent Observability（D：Tracer + MCP + 容错 + 监控）
+  v0.4 Kagent Memory（E：MemoryManager / ContextBuilder / Note&Terminal）
+  v0.5 Examples（F：旅行助手 / 深度研究 / 赛博小镇）
+```
+
+### 0.2 任务速查矩阵
+
+> 列含义：**任务** / **目标一句话** / **主要文件** / **测试文件** / **前置依赖** / **MVP**
+>
+> ★ = v0.1 MVP 必做  ｜ ◇ = v0.2 (Core 增强)  ｜ △ = v0.3 (Observability)  ｜ ◯ = v0.4 (Memory) ｜ ▽ = v0.5 (Examples)
+
+| 任务 | 目标 | 主要文件 | 测试文件 | 依赖 | MVP |
+|------|------|---------|---------|------|-----|
+| A1 | 目录骨架 + pyproject.toml + .env.example | `pyproject.toml` `.env.example` `.gitignore` `kagent/**/__init__.py` | （无） | — | ★ |
+| A2 | pytest 配置 + smoke test | `pyproject.toml` `tests/unit/test_smoke.py` `tests/fixtures/.env.test` | `test_smoke.py` | A1 | ★ |
+| A3 | Config 类 + .env 加载 + 校验 | `kagent/core/config.py` | `tests/unit/test_config.py` | A1, A2 | ★ |
+| A4 | LLMProvider ABC + Registry | `kagent/core/llm/{models,base}.py` | `tests/unit/test_llm.py::TestLLMProvider*` | A1, A2 | ★ |
+| A5 | AgentLLM 门面 + PROVIDER_CONFIG lazy-load | `kagent/core/llm/factory.py` | `tests/unit/test_llm.py::TestAgentLLM*` | A3, A4 | ★ |
+| A6 | OpenAIProvider（client 复用） | `kagent/core/llm/providers.py` | `tests/unit/test_llm.py::TestOpenAIProvider` | A4 | ★ |
+| A7 | Tool ABC + ToolRegistry（含 enable/disable） | `kagent/tools/{base,registry}.py` | `tests/unit/test_tools.py::TestTool*` | A1, A2 | ★ |
+| A8 | CalculatorTool（AST）+ SearchTool（Tavily/SerpApi） | `kagent/tools/builtin/{calculator,search}.py` | `tests/unit/test_tools.py::TestCalculatorTool, TestSearchTool` | A7 | ★ |
+| —— | Stage A 集成 | — | `tests/integration/test_llm_tool_wire.py` | A1-A8 | ★ |
+| B1 | Agent ABC + Message | `kagent/core/{agent,message}.py` | `tests/unit/test_{agent,message}.py` | A4, A5 | ★ |
+| B2 | SimpleAgent | `kagent/agents/simple_agent.py` | `tests/unit/test_agent.py::TestSimpleAgent` | B1, A7 | ★ |
+| B3 | ReActAgent | `kagent/agents/react_agent.py` | `tests/unit/test_agent.py::TestReActAgent` | B1, A7 | ★ |
+| B4 | PlanAndSolveAgent | `kagent/agents/plan_solve_agent.py` | — | B1 | ◇ |
+| B5 | ReflectionAgent | `kagent/agents/reflection_agent.py` | — | B1 | ◇ |
+| B6 | FunctionCallAgent | `kagent/agents/function_call_agent.py` | — | B1, A7 | ◇ |
+| —— | Stage B 集成 | — | `tests/integration/test_agent_with_tool.py` | B2-B3, A8 | ★ |
+| C1 | 目录骨架验证 + import 全量可用 | （仅检查） | — | A1-B3 | ★ |
+| C2 | 升级 KagentError 为双字段（user_message / debug_message） | `kagent/core/exceptions.py` + 所有 raise 处 | `tests/unit/test_exceptions.py` | B3 | ★ |
+| C3 | Agent 基类注入 Config + custom_prompt + run_id | `kagent/core/agent.py` | `tests/unit/test_agent.py::TestAgentConfig, TestCustomPrompt` | B1, A3 | ★ |
+| C4 | 多 Provider（Ollama/VLLM/Zhipu）+ auto-detect | `kagent/core/llm/{factory,providers}.py` | `tests/unit/test_llm.py::TestAutoDetect` | A5, A6 | ◇ |
+| C5 | ToolRegistry 双注册 + 加锁 | `kagent/tools/registry.py` | `tests/unit/test_tools.py::TestRegistryFramework` | A7 | ◇ |
+| C6 | SimpleAgent 框架化 | `kagent/agents/simple_agent.py` | `tests/unit/test_agent.py::TestSimpleAgent`（扩展） | B2, C2, C3 | ◇ |
+| C7 | ReActAgent 框架化（含 custom_prompt 模板） | `kagent/agents/react_agent.py` | `tests/unit/test_agent.py::TestReActAgent`（扩展） | B3, C2, C3 | ◇ |
+| C8 | pip install -e . 验证 + 最小 README | `pyproject.toml` `README.md` | `tests/integration/test_{framework_import,pip_install}.py` | C1-C3 | ★ |
+| C9 | FunctionCallAgent 框架化 + 并行工具调用 | `kagent/agents/function_call_agent.py` | — | B6, C2, C5 | ◇ |
+| D1 | Span + Tracer（contextvars 并发隔离） | `kagent/core/tracing/{models,tracer}.py` | `tests/unit/test_tracing.py::TestTracer` | C2 | △ |
+| D2 | TraceExporter（dict/json/tree） | `kagent/core/tracing/exporter.py` | `tests/unit/test_tracing.py::TestExporter` | D1 | △ |
+| D3 | Agent 埋点（AGENT_RUN/STEP/LLM_CALL/TOOL_CALL） | `kagent/agents/{simple,react}_agent.py` | `tests/integration/test_agent_with_tracing.py` | D1, B3 | △ |
+| D4 | MCPTool（子进程 + tools/list / tools/call） | `kagent/tools/mcp_tool.py` | `tests/integration/test_mcp.py` | A7 | △ |
+| D5 | MCP Server 模板 | `kagent/tools/mcp_server_template.py` | （由 D4 集成测试覆盖） | D4 | △ |
+| D6 | ToolRegistry.register_mcp() | `kagent/tools/registry.py` | `tests/integration/test_mcp.py` | D4, A7 | △ |
+| D7 | 容错增量（LLM 重试 / 锁 / 缓存 / MCP 重连） | 多文件，见 §6.3 D7 | `tests/unit/test_fault_tolerance.py` | C2, D1-D6 | △ |
+| D8 | 监控（Token 统计 + run_id + 结构化日志） | `kagent/core/{tracing,llm/factory,agent}.py` | `tests/unit/test_tracing.py::test_token_stats` | D1, D3, C3 | △ |
+| E1-E5 | Memory + ContextBuilder + NoteTool/TerminalTool | `kagent/memory/*` `kagent/context/*` | — | D 阶段 | ◯ |
+| F1-F3 | 旅行助手 / 深度研究 / 赛博小镇 | `projects/*/main.py` | （手动） | E 阶段 | ▽ |
+
+### 0.3 关键设计常量
+
+| 常量 | 值 | 来源 |
+|------|-----|------|
+| Python 最低版本 | `>=3.10` | §3.0 pyproject.toml |
+| LLM 默认 provider | `openai` | `Config.default_provider` |
+| LLM 默认 model | `gpt-4o` | `Config.default_model` |
+| 默认 max_steps | 5 | `Config.max_steps` |
+| 默认 max_history_length | 50 | `Config.max_history_length` |
+| 默认 search backend | `tavily` | `SearchTool` + `.env.example` |
+| LLM 重试退避 | 1s → 2s → 4s, 3 次 | §3.7 L3（v0.3 起，D7 落地） |
+| Search 幂等窗口 | 5s | §3.7 I1（v0.3 起，D7 落地） |
+| MCP 重连次数 | 3（30s 超时） | §3.7（v0.3 起，D7 落地） |
+
+### 0.4 三大设计哲学（出处 §1.2）
+
+1. **可插拔注册制** — 新增 = 写一个类 + 在 `PROVIDER_CONFIG` / `ToolRegistry` 加一行
+2. **配置驱动** — 切换 LLM / 模型 / 工具开关 = 改 `.env` 一行，代码零改动
+3. **链路追踪是基础设施**（v0.3 起强制）— 每次 `run()` 一棵 Span 树 + Token 统计 + run_id
+
+### 0.5 八条 Axioms（出处 §7）
+
+1. Spec before implementation｜2. One hour, one verifiable increment｜3. Test-first, always
+4. Interfaces before implementations｜5. Configuration drives behavior｜6. Fail fast, degrade gracefully
+7. Observability is not optional（v0.3 起）｜8. SPEC is a living document
+
+### 0.6 给 auto-coder 的检索路径
+
+> 当 auto-coder（或新人）准备开始一个任务，按下面四步走：
+>
+> 1. **§0.2 速查矩阵** 找到任务行 → 拿到「主要文件 / 测试文件 / 依赖」
+> 2. **§5.2 目录结构** 确认文件路径与标记（★ 必做 / △/◇/◯/▽ 后续版本）
+> 3. **§6.3 任务卡** 读完整契约（目标 / 类函数签名 / 验收 / 测试命令）
+> 4. **§3.7 运行时契约** 查该任务涉及的运行时约束（异常处理 / 重试 / 并发 / 安全）
+>
+> 写代码前先写测试（§4.1 TDD），文件必须落到 §5.2 指定路径，不要自创目录。
 
 ---
 
@@ -43,15 +145,24 @@ LLM Provider、Tool、MCP 外部服务均通过 Registry 接入。框架内核�
 
 ### 1.4 范围边界
 
-**v0.1 MVP 必须完成：**
+**v0.1 MVP 必须完成（= Kagent Core 子项目）：**
 - pip 可安装的 `kagent` 包与最小目录骨架
-- LLM Provider 抽象、注册中心、OpenAI 兼容 Provider、配置驱动选择
-- Tool 抽象、ToolRegistry、CalculatorTool、SearchTool（真实外部搜索测试可跳过）
+- LLM Provider 抽象、注册中心、OpenAI 兼容 Provider、配置驱动选择（含 PROVIDER_CONFIG 自动 lazy-load）
+- Tool 抽象、ToolRegistry、CalculatorTool、SearchTool（真实外部搜索测试 `external` 标记，CI 跳过）
 - SimpleAgent / ReActAgent 两种基础 Agent
-- Tracer / Span / TraceExporter 基础链路追踪
-- 单元测试、Mock 集成测试、最小 README 示例
+- Config 类 + KagentError 异常体系（双字段 user_message / debug_message）
+- `pip install -e .` 后 `from kagent import SimpleAgent, ReActAgent, AgentLLM, Config` 可用
+- 单元测试 ≥ 55 用例 + Mock 集成测试 ≥ 8 用例 + 最小 README 示例
 
-**MVP 硬截止线：A1-A8 + B1-B3 + C1-C3 + C8（Config + 异常体系 + pip install 验证）。** C4-C7/C9（多 Provider 扩展、Agent 加固）以及 D/E/F 阶段全部属于 v0.2+。
+**MVP 硬截止线：A1-A8 + B1-B3 + C1-C3 + C8。** C4/C5/C6/C7/C9（多 Provider 扩展、Agent 进一步加固）以及 D/E/F 阶段全部属于 v0.2+。
+
+**显式不在 v0.1 范围内：**
+- ❌ Tracer / Span / TraceExporter — v0.3 Observability 子项目（D 阶段）
+- ❌ MCPTool / MCP 容错与重连 — v0.3（D 阶段）
+- ❌ PlanAndSolveAgent / ReflectionAgent / FunctionCallAgent — v0.2 Core 增强（B4-B6 + C9）
+- ❌ Memory 系统 / ContextBuilder — v0.4 Memory 子项目（E 阶段）
+- ❌ settings.yaml 分层配置 — v0.3+ 引入（v0.1 仅 .env，见 §5.4）
+- ❌ 实战项目（旅行助手 / 深度研究 / 赛博小镇）— v0.5 Examples 子项目（F 阶段）
 
 ### 1.4.1 子项目分解
 
@@ -67,11 +178,11 @@ LLM Provider、Tool、MCP 外部服务均通过 Registry 接入。框架内核�
 每个子项目应在完成前一个之后再启动（Core → Observability → Memory → Examples）。Memory 和 Observability 可并行。
 
 **v0.1 范围内（＝ MVP 硬截止线以上）：**
-- LLM 调用层（可插拔 Provider 注册制，内置 OpenAI，其余 Provider 为 v0.2+）
+- LLM 调用层（可插拔 Provider 注册制 + PROVIDER_CONFIG 自动 lazy-load，内置 OpenAI，其余 Provider 为 v0.2+）
 - 2 种 Agent 范式（SimpleAgent / ReActAgent）
-- 可插拔工具系统（本地 Tool + 裸函数注册）
-- 基础链路追踪（Tracer + Span + TraceExporter）
-- Config 类 + 异常体系 + pip install
+- 可插拔工具系统（本地 Tool + 裸函数注册 + 工具 lifecycle: enable/disable）
+- Config 类 + KagentError 异常体系（双字段）+ pip install -e .
+- 内置工具：CalculatorTool（AST 安全求值）+ SearchTool（SerpApi/Tavily 二选一）
 
 **v0.2+（后续版本，不在本 spec 的实施范围内）：**
 - 5 种 Agent 范式补齐（PlanAndSolveAgent / ReflectionAgent / FunctionCallAgent）
@@ -82,10 +193,10 @@ LLM Provider、Tool、MCP 外部服务均通过 Registry 接入。框架内核�
 - 3 个实战参考项目（旅行助手 / 深度研究 / 赛博小镇）
 
 **v0.1 后续路线：**
-- v0.2（子项目：Kagent Core 增强）：多 Provider（ModelScope/Zhipu/Ollama/VLLM + auto-detect）、FunctionCallAgent + PlanAndSolveAgent + ReflectionAgent
-- v0.3（子项目：Kagent Observability）：MCPTool、并行工具调用、容错重试、监控告警
-- v0.4（子项目：Kagent Memory）：MemoryManager、Working/Episodic/Semantic Memory、ContextBuilder
-- examples（子项目：Examples）：旅行助手 / 深度研究 / 赛博小镇作为框架能力验收样例，不阻塞核心包发布
+- **v0.2 — Kagent Core 增强**（C4-C7 + C9）：多 Provider（ModelScope/Zhipu/Ollama/VLLM + auto-detect）、PlanAndSolveAgent / ReflectionAgent / FunctionCallAgent 三种范式补齐
+- **v0.3 — Kagent Observability**（D 阶段全部）：Tracer / TraceExporter / Agent 埋点、MCPTool + MCP Server 模板、容错重试与缓存、监控（Token 统计 + run_id + 结构化日志）
+- **v0.4 — Kagent Memory**（E 阶段全部）：BaseMemory / MemoryManager / Working / Episodic / Semantic、MemoryTool、ContextBuilder（GSSC）、NoteTool / TerminalTool
+- **v0.5 — Examples**（F 阶段全部）：旅行助手 / 深度研究 / 赛博小镇骨架，作为框架能力验收样例，不阻塞核心包发布
 
 **明确排除：**
 - RAG 引擎实现 — 用户自有 RAG 项目通过 MCP 接入
@@ -169,71 +280,85 @@ LLM Provider、Tool、MCP 外部服务均通过 Registry 接入。框架内核�
 
 > `pyproject.toml` 的 `[project.dependencies]` 和 `[project.optional-dependencies]` 必须按此表声明，不得遗漏或自行引入未列出的库。用户通过 `pip install -e ".[dev]"` 即可搭建开发环境。
 
-#### 核心依赖（`pip install kagent`）
+#### v0.1 核心依赖（`pip install kagent`）
 
 | 包名 | 版本约束 | 用途 | 引入阶段 |
 |------|---------|------|---------|
-| `openai` | `>=1.0` | OpenAI 兼容 LLM 调用（`chat.completions.create`） | A |
-| `pydantic` | `>=2.0` | 数据模型校验（`BaseModel`, `Field`, `ValidationError`） | A |
-| `python-dotenv` | `>=1.0` | `.env` 文件加载到 `os.environ` | A |
-| `httpx` | `>=0.24` | HTTP 客户端（`openai` 内部依赖 + LLM 超时/限流处理） | A |
+| `openai` | `>=1.0` | OpenAI 兼容 LLM 调用（`chat.completions.create`），自带 `httpx` 作为 transitive 依赖 | A6 |
+| `pydantic` | `>=2.0` | 数据模型校验（`BaseModel`, `Field`, `ValidationError`） | A3 |
+| `python-dotenv` | `>=1.0` | `.env` 文件加载到 `os.environ` | A3 |
 
-#### 可选依赖（`pip install kagent[mcp]` / `kagent[examples]`）
+> 不在 v0.1 直接依赖里：`httpx`（OpenAI SDK 已 transitive 引入；如需自建 HTTP 客户端再显式加）；`pyyaml`（settings.yaml 推迟到 v0.3+）；`requests`（标准库 `urllib.request` 已够用，搜索工具用它）。
+
+#### v0.2+ 可选依赖（`pip install kagent[mcp]` / `kagent[memory]` / `kagent[examples]`）
 
 | 包名 | 版本约束 | 用途 | 引入阶段 | extra name |
 |------|---------|------|---------|-----------|
 | `mcp` | `>=1.0` | MCP 协议客户端（`MCPTool` 连接外部 MCP Server） | D | `mcp` |
+| `pyyaml` | `>=6.0` | settings.yaml 解析（v0.3+ 引入分层配置后启用） | D | `mcp` 或独立 `config` |
 | `numpy` | `>=1.24` | SemanticMemory 向量检索（余弦相似度计算） | E | `memory` |
 | `fastapi` | `>=0.100` | 实战示例的 HTTP API 入口 | F | `examples` |
 | `uvicorn` | `>=0.20` | ASGI 服务器（配合 FastAPI） | F | `examples` |
 
 #### 开发依赖（`pip install kagent[dev]`）
 
-| 包名 | 版本约束 | 用途 |
-|------|---------|------|
-| `pytest` | `>=7.0` | 单元/集成测试框架 |
-| `pytest-cov` | `>=4.0` | 覆盖率报告 |
-| `pytest-asyncio` | `>=0.21` | async 测试支持（为后续 async Agent 预留） |
+| 包名 | 版本约束 | 用途 | 何时加入 |
+|------|---------|------|---------|
+| `pytest` | `>=7.0` | 单元/集成测试框架 | A2 |
+| `pytest-cov` | `>=4.0` | 覆盖率报告 | A2 |
+| `pytest-asyncio` | `>=0.21` | async 测试支持（**当首次出现 async 接口时再加**，v0.1 暂不需要） | v0.2+ |
 
 #### 标准库（无需声明，仅作记录）
 
 | 模块 | 用途 | 引入阶段 |
 |------|------|---------|
-| `ast` | CalculatorTool 安全表达式解析（`ast.literal_eval`） | A |
+| `ast` | CalculatorTool 安全表达式解析 | A8 |
+| `math`, `operator` | CalculatorTool 数学函数 + 操作符表 | A8 |
+| `urllib.request`, `urllib.parse`, `json` | SearchTool（SerpApi）HTTP 调用 | A8 |
 | `re` | Agent 输出正则解析（Thought/Action 提取） | B |
-| `uuid` | `run_id` 生成、`trace_id` / `span_id` 生成 | B/D |
+| `uuid` | `run_id` 生成、`trace_id` / `span_id` 生成 | C / D |
 | `dataclasses` | `Span` 数据类定义（`@dataclass` + `field`） | D |
 | `contextvars` | `Tracer` 并发隔离（`ContextVar`） | D |
 | `time` | `start_time` / `end_time` 记录 | D |
-| `json` | Trace JSON 导出 + MCP 消息序列化 | D |
 | `subprocess` | MCP Server 子进程启动/管理 | D |
 | `sqlite3` | EpisodicMemory 持久化 | E |
 | `collections` | `OrderedDict`（WorkingMemory 容量淘汰） | E |
 | `typing` | 类型注解（`Literal`, `Iterator`, `Any`） | 全阶段 |
+| `importlib` | A5 PROVIDER_CONFIG.class 反射 lazy-load | A5 |
+| `threading` | ToolRegistry 注册/注销加锁（v0.3+ 多线程场景） | D |
 
 
-#### pyproject.toml 完整声明
+#### pyproject.toml 完整声明（v0.1）
 
 ```toml
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"     # ⚠️ 标准 backend，不要写 setuptools.backends._legacy:_Backend
+
 [project]
 name = "kagent"
 version = "0.1.0"
+description = "Pluggable AI Agent Framework"
 requires-python = ">=3.10"
 dependencies = [
     "openai>=1.0",
     "pydantic>=2.0",
     "python-dotenv>=1.0",
-    "httpx>=0.24",
 ]
 
 [project.optional-dependencies]
-mcp = ["mcp>=1.0"]
-memory = ["numpy>=1.24"]
-examples = ["fastapi>=0.100", "uvicorn>=0.20"]
-dev = ["pytest>=7.0", "pytest-cov>=4.0", "pytest-asyncio>=0.21"]
+dev = ["pytest>=7.0", "pytest-cov>=4.0"]
+# v0.2+ 启用：
+# mcp = ["mcp>=1.0", "pyyaml>=6.0"]
+# memory = ["numpy>=1.24"]
+# examples = ["fastapi>=0.100", "uvicorn>=0.20"]
+
+[tool.setuptools.packages.find]
+include = ["kagent*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 markers = [
     "external: 真实 API 测试，CI 默认跳过（需 API Key）",
 ]
@@ -269,14 +394,17 @@ class LLMProvider(ABC):
                     tools: list[dict] | None = None): ...  # Iterator[LLMChunk]
 ```
 
-**配置：**
+**配置（v0.1 单一配置源 — 所有 Provider 共用同一组 env）：**
 ```yaml
 # .env
-LLM_PROVIDER=openai          # openai | modelscope | zhipu | ollama | vllm | 自定义
+LLM_PROVIDER=openai          # v0.1: openai | ollama | vllm  ｜ v0.2+: + modelscope | zhipu | auto
 LLM_MODEL_ID=gpt-4o
-LLM_API_KEY=sk-xxx
-LLM_BASE_URL=https://api.openai.com/v1  # 可选，Provider 有默认值
+LLM_API_KEY=sk-xxx           # ollama / vllm 可空
+LLM_BASE_URL=                # 可选，留空时走 PROVIDER_CONFIG[name].default_base_url
+LLM_TIMEOUT=60               # HTTP 超时（秒）
 ```
+
+> **设计原则**：`LLM_API_KEY` / `LLM_BASE_URL` 是单一来源，**不再为每个 Provider 设独立 env**（如 `OPENAI_API_KEY`、`MODELSCOPE_API_KEY` 等），切 Provider 只需改 `LLM_PROVIDER` 一行。这是"切换零代码改动"承诺的代码体现。
 
 **工厂模式（内嵌在 AgentLLM 构造函数中）：**
 ```python
@@ -286,8 +414,13 @@ class AgentLLM:
     @classmethod
     def register_provider(cls, name: str, provider: LLMProvider): ...
 
-    def __init__(self, provider=None, model=None, ...):
-        # 1. 读取 LLM_PROVIDER → 2. 查 PROVIDER_CONFIG → 3. 获取/注册 Provider
+    def __init__(self, provider=None, model=None, api_key=None,
+                 base_url=None, timeout=60, config=None):
+        # 1. 读取 Config（默认从 .env） → 解析最终 provider/model/api_key/base_url/timeout
+        # 2. _get_or_load_provider(): 先查 _registry；
+        #    未注册则查 PROVIDER_CONFIG[name].class → importlib 反射 → 用解析出来的
+        #    api_key/base_url/timeout 实例化 → register 进 _registry
+        # 3. 仍失败抛 ConfigError（含已注册 + 已知 PROVIDER_CONFIG 列表）
         ...
 
     def invoke(self, messages: list[dict], temperature=None,
@@ -297,41 +430,49 @@ class AgentLLM:
                tools: list[dict] | None = None, **kwargs): ...  # Iterator[LLMChunk]
 ```
 
-**Provider 配置字典（`PROVIDER_CONFIG`）：**
+**Provider 配置字典（`PROVIDER_CONFIG`）—— v0.1 必须包含 `class` 字段以支持 lazy-load：**
 
 ```python
 PROVIDER_CONFIG: dict[str, dict] = {
+    # v0.1 内置
     "openai": {
-        "class": "kagent.core.llm.OpenAIProvider",
+        "class": "kagent.core.llm.providers.OpenAIProvider",
         "default_base_url": "https://api.openai.com/v1",
-        "env_key": "OPENAI_API_KEY",
-        "env_base_url": "OPENAI_BASE_URL",
-    },
-    "modelscope": {
-        "class": "kagent.core.llm.ModelScopeProvider",
-        "default_base_url": "https://api-inference.modelscope.cn/v1",
-        "env_key": "MODELSCOPE_API_KEY",
-    },
-    "zhipu": {
-        "class": "kagent.core.llm.ZhipuProvider",
-        "default_base_url": "https://open.bigmodel.cn/api/paas/v4",
-        "env_key": "ZHIPU_API_KEY",
+        "requires_api_key": True,
     },
     "ollama": {
-        "class": "kagent.core.llm.OllamaProvider",
+        "class": "kagent.core.llm.providers.OpenAIProvider",  # 复用 OpenAI 兼容接口
         "default_base_url": "http://localhost:11434/v1",
-        "env_key": None,  # Ollama 无需 API Key
+        "requires_api_key": False,
     },
     "vllm": {
-        "class": "kagent.core.llm.VLLMProvider",
+        "class": "kagent.core.llm.providers.OpenAIProvider",  # 同上
         "default_base_url": "http://localhost:8000/v1",
-        "env_key": None,
+        "requires_api_key": False,
     },
+    # v0.2+ (C4 阶段添加，需要专门的 Provider 子类)
+    # "modelscope": {"class": "kagent.core.llm.providers.ModelScopeProvider", ...},
+    # "zhipu":      {"class": "kagent.core.llm.providers.ZhipuProvider", ...},
 }
-# 初始化流程：查 PROVIDER_CONFIG[name] → 读 env_key 取凭证 → 实例化 provider class → register
 ```
 
-**降级策略**：Provider 不可用时抛出 `LLMError`，Agent 层捕获后记录 Trace 并终止。
+**`_get_or_load_provider` 算法：**
+```
+1. if name in self._registry:                           # 已显式注册过的 mock/test 实例优先
+       return registry[name]
+2. if name not in PROVIDER_CONFIG:
+       raise ConfigError(f"未知 provider '{name}'，可用: {list(PROVIDER_CONFIG)}")
+3. cfg = PROVIDER_CONFIG[name]
+4. if cfg["requires_api_key"] and not self.api_key:
+       raise ConfigError(f"provider '{name}' 需要 LLM_API_KEY")
+5. base_url = self.base_url or cfg["default_base_url"]
+6. cls = importlib.import_module(...).getattr(class_name)   # 反射 import
+7. provider = cls(api_key=self.api_key, base_url=base_url, timeout=self.timeout)
+8. self._registry.register(name, provider)              # 缓存
+9. return provider
+```
+
+**降级策略**：Provider 不可用时抛出 `LLMError`，Agent 层捕获后（v0.3 起，D 阶段引入 Tracer）记录 Trace 并终止。v0.1/v0.2 直接向上抛。
 
 #### 3.1.2 LLMProviderRegistry
 
@@ -394,10 +535,7 @@ class ToolRegistry:
     # register_mcp() 在 D6 阶段新增，此时 MCPTool 尚不存在
 ```
 
-**降级策略（统一约束）**：
-- **工具执行异常**：`execute_tool()` 内部 try/except 包裹，永远返回 `ToolResult(success=False, error=..., content="[ERROR] 工具 '{name}' 执行失败: {message}")`，**不抛异常**，不中断 Agent 循环。Trace 记录 `SpanStatus.ERROR` + 携带 `user_message`。
-- **LLM API 超时/限流**：指数退避重试（1s→2s→4s，最多 3 次）。3 次均失败后抛 `LLMError`（含 `user_message`），由 Agent 层捕获并终止。
-- **搜索幂等**：同一 query 5s 内走缓存，不发起重复 HTTP 请求。
+> 工具系统的具体降级与重试策略统一汇总在 §3.7 运行时契约。本节只定义接口契约，不重复策略文字。
 
 ### 3.3 MCP 外部网关
 
@@ -498,29 +636,81 @@ class Config(BaseModel):
     @classmethod def from_env(cls) -> "Config": ...
 
 class KagentError(Exception):
-    def __init__(self, user_message: str, debug_message: str | None = None): ...
+    """v0.1 双字段异常基类。
+
+    A 阶段（A3 之前已有）允许单字段简化版：KagentError(message)。
+    C2 任务负责升级为双字段并迁移所有 raise：
+      - user_message: 给最终用户看的消息（脱敏，可写入 LLM 上下文）
+      - debug_message: 给开发者看的（含路径、HTTP 原文、stack 摘要等）
+    Trace / 日志默认只导出 user_message；debug_message 仅在 Config.debug=True 时导出。
+    """
+    def __init__(self, user_message: str, debug_message: str | None = None):
+        self.user_message = user_message
+        self.debug_message = debug_message
+        super().__init__(user_message)
+
 class AgentError(KagentError): ...
 class LLMError(KagentError): ...
 class ToolError(KagentError): ...
 class ConfigError(KagentError): ...
 ```
 
-### 3.7 运行时约束与安全模型
+> **A→C 迁移路径**：A 阶段已有的 `LLMError(str(e))` / `ConfigError(msg)` 等单参调用在 C2 升级时**保持向后兼容**：把 `__init__` 写成 `def __init__(self, user_message, debug_message=None)`，老代码 `LLMError("foo")` 自动落入 `user_message="foo", debug_message=None`，无需改 raise 处。新代码可用 `LLMError("API 暂不可用，请稍后重试", debug_message=f"HTTP 503 from {url}: {raw}")`。
 
-#### 3.7.1 并发与上下文隔离
+### 3.7 运行时契约（单一来源 — 所有阶段共同遵守）
 
-- `Tracer` 使用 `contextvars` 保存当前 trace，避免多线程或 async Agent 并发运行时串 trace。
-- `Registry` 的运行时热插拔只影响新建 Agent 或下一次 `run()`，不修改正在执行中的调用链。
-- `ToolRegistry` 注册 / 注销操作需要加锁；工具执行阶段读取不可变快照，避免执行中工具集合变化。
-- v0.1 默认同步接口优先；async 工具执行器放入后续版本，避免第一版接口复杂化。
+> 此节是所有"降级 / 重试 / 幂等 / 并发 / 安全"约束的**唯一权威来源**。其他章节只引用本节、不重复策略文字。
+> 表格的"v0.x 起"列说明该约束在哪个版本开始生效；之前可以放宽。
 
-#### 3.7.2 安全与隐私
+#### 3.7.1 工具执行（`ToolRegistry.execute_tool`）
 
-- Trace / 日志默认脱敏：API Key、Authorization、Cookie、password、secret、token 等字段不得明文写入。
-- `LLMResponse.raw` 和 `ToolResult.metadata` 默认不导出到 JSON；只有 `debug=True` 且显式允许时才导出。
-- `TerminalTool` 默认只允许 `read/list`，并限制在配置的 workspace 根目录内；写入、删除、执行命令必须作为后续高级能力单独开启。
-- 外部工具默认 allowlist 注册，禁止从配置中静默启用未知危险工具。
-- 用户可见错误使用 `user_message`，开发者调试信息使用 `debug_message`，避免把内部路径、密钥、HTTP 原文暴露给最终用户。
+| # | 约束 | v0.x 起 | 实现位置 |
+|---|------|---------|---------|
+| T1 | 工具未注册 → 返回 `ToolResult(success=False, content="[ERROR] 工具 '{name}' 未注册", error="tool_not_found")`，**不抛** | v0.1 | `registry.py` |
+| T2 | 工具被 `disable()` → 返回 `ToolResult(success=False, content="[ERROR] 工具 '{name}' 已被禁用", error="tool_disabled")` | v0.1 | `registry.py` |
+| T3 | 工具 `run()` 抛异常 → 捕获并返回 `ToolResult(success=False, content="[ERROR] 工具 '{name}' 执行失败: {e}", error=str(e))`，**绝不向上抛** | v0.1 | `registry.py` |
+| T4 | 工具结果统一带 `metadata`，敏感字段（api_key/cookie/...）必须在工具内部脱敏后再放入 `metadata` | v0.1 | 各 Tool 实现 |
+| T5 | `register_tool` / `unregister` / `disable` / `enable` 必须线程安全（加 `threading.Lock`）；`execute_tool` 取 dict 不可变快照 | **v0.3 起 (D7)**（v0.1/v0.2 单线程默认） | `registry.py` |
+
+#### 3.7.2 LLM 调用（`AgentLLM.invoke` / `OpenAIProvider.chat`）
+
+| # | 约束 | v0.x 起 | 实现位置 |
+|---|------|---------|---------|
+| L1 | Provider 不可用（PROVIDER_CONFIG 无该项 / 反射 import 失败 / 缺 API Key）→ 启动期抛 `ConfigError`（fail-fast） | v0.1 | `factory.py` |
+| L2 | OpenAI SDK 抛任意异常 → 包装为 `LLMError(user_message="LLM 调用失败", debug_message=str(e))` 向上抛 | v0.1 | `providers.py` |
+| L3 | API 超时 / 429 限流 → 指数退避重试（1s → 2s → 4s，最多 3 次），3 次均失败抛 `LLMError` | **v0.3 起 (D7)**（v0.1/v0.2 直接抛） | `providers.py` 或 `factory.py` |
+| L4 | OpenAI client 在 `Provider.__init__` 创建一次并复用（连接池）；不要每次 `chat()` 都 new | v0.1 | `providers.py` |
+| L5 | `LLMResponse.raw` 默认不进入日志/导出；`Config.debug=True` 时才允许导出 | v0.1 | `providers.py` + 后续 Tracer |
+
+#### 3.7.3 Agent 循环（`Agent.run`）
+
+| # | 约束 | v0.x 起 | 实现位置 |
+|---|------|---------|---------|
+| A1 | `max_steps` 是硬上限，超过后强制返回当前状态最佳结果（不抛异常） | v0.1 | `simple_agent.py` / `react_agent.py` |
+| A2 | LLM 输出格式不合法（ReAct 解析失败）→ 在 history 注入 `Observation: 格式错误，请严格遵循 ... 格式` 继续循环，直到 `max_steps` | v0.1 | `react_agent.py` |
+| A3 | LLM 抛 `LLMError` → Agent 终止本次 run，返回 `f"[ERROR] {e.user_message}"`，并记录 history | v0.1 | `agent.py` 基类 |
+| A4 | 工具返回 `success=False` → Agent 把 `content`（含 `[ERROR] ...`）作为 Observation 喂回 LLM，让 LLM 自决是否换工具 | v0.1 | `react_agent.py` |
+| A5 | 每次 `Agent.run()` 生成新的 `run_id = uuid.uuid4().hex[:8]`，全 Span / 日志可关联 | C 阶段 | `agent.py` 基类 |
+
+#### 3.7.4 幂等与缓存
+
+| # | 约束 | v0.x 起 |
+|---|------|---------|
+| I1 | `SearchTool.run({"query": q})` 同一 q 5s 内走内存缓存，不重复发 HTTP | v0.3 起 (D7) |
+
+#### 3.7.5 并发与上下文隔离
+
+- `Tracer` 用 `contextvars` 保存当前 trace（v0.3 起，D1 引入）→ 多线程 / async 不串 trace。
+- v0.1 全部**同步接口优先**；async 接口放 v0.4+（与 Memory 一并引入）。
+- Registry 热插拔只影响**新建** Agent 或**下一次** `run()`，不修改正在执行中的调用链。
+
+#### 3.7.6 安全与隐私
+
+- Trace / 日志默认脱敏：API Key、Authorization、Cookie、password、secret、token 等字段不得明文写入（v0.3 起 Tracer 实现脱敏过滤器；v0.1/v0.2 只在工具层做基础脱敏）。
+- `LLMResponse.raw` 和 `ToolResult.metadata` 默认不导出 JSON；仅 `Config.debug=True` 时导出。
+- 用户可见错误用 `user_message`，开发者调试信息用 `debug_message`（C2 升级双字段后强制）。
+- v0.1 不内置 `TerminalTool`；E5 引入时默认只允许 `read/list`，写入/删除/执行命令独立开关。
+- 外部工具默认 allowlist 注册（v0.3 D6 引入 MCP 时强制）。  <!-- 版本与上文 D 阶段对齐 -->
 
 ---
 
@@ -797,7 +987,7 @@ class ConfigError(KagentError): ...
                         │  ★ v0.1 MVP   │  ★ v0.1 MVP          │
                         │───────────────┼───────────────────────│
                         │  PlanSolve / Reflect / FunctionCall   │
-                        │  → v0.2+                             │
+                        │  → v0.2 (B4-B6 + C9)                 │
                         │  自定义 Agent (继承 Agent 基类)        │
                         └────────┬───────────┬─────────────────┘
                                  │           │
@@ -830,118 +1020,119 @@ class ConfigError(KagentError): ...
         │  │配置  │  │Provider│ │内置 Tool  │  ★ v0.1 MVP    │
         │  └──────┘  └───────┘ └──────────┘                 │
         │                                                   │
-        │  v0.2+: Ollama/VLLM/Zhipu/ModelScope Provider     │
-        │  v0.3+: MCPTool + MCP Server 外部网关              │
+        │  v0.1: openai / ollama / vllm（OpenAI 兼容协议）     │
+        │  v0.2: + Zhipu / ModelScope / auto-detect          │
+        │  v0.3: + MCPTool（MCP 外部网关，D 阶段）             │
         └───────────────────────────────────────────────────┘
 
         ┌──────────────────────────────────────────────────────────────┐
-        │        🧱 基础设施层 + MCP 外部网关 (v0.3+)                    │
+        │        🧱 基础设施层 (Memory / Context — v0.4 Kagent Memory)   │
         │                                                              │
-        │  Memory System / ContextBuilder / Storage → 后续版本          │
+        │  Memory System / ContextBuilder / Storage（E 阶段）           │
+        │  v0.1 仅创建占位包 kagent.memory / kagent.context              │
         └──────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                      🔍 横切关注层（贯穿所有层）                                │
 │                                                                             │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │
-│  │  ★ 链路追踪   │  │   监控告警    │  │   容错降级    │  │   配置驱动    │    │
+│  │   链路追踪    │  │   监控告警    │  │   容错降级    │  │ ★ 配置驱动    │    │
 │  │              │  │              │  │              │  │              │    │
-│  │ Tracer 单例  │  │ trace_id 贯穿 │  │ try/except   │  │ .env +       │    │
-│  │ Span 树      │  │ Token 统计   │  │ 指数退避重试  │  │ settings.yaml│    │
-│  │ Tree/JSON导出│  │ 请求级日志   │  │ 幂等+缓存    │  │ 一行切换     │    │
+│  │ Tracer 单例  │  │ trace_id 贯穿 │  │ try/except   │  │ .env (v0.1)  │    │
+│  │ Span 树      │  │ Token 统计   │  │ 工具异常→Result│ │ settings.yaml│    │
+│  │ Tree/JSON导出│  │ 请求级日志   │  │ 指数退避重试  │  │   (v0.3+)    │    │
 │  │              │  │              │  │              │  │              │    │
-│  │ ★ v0.1 核心  │  │   v0.3+      │  │   v0.3+      │  │   v0.1       │    │
-│  └──────┬───────┘  └──────────────┘  └──────────────┘  └──────────────┘    │
-│         │                                                                    │
-│         │  Tracer 埋点在 Agent.run() / AgentLLM.invoke() /                   │
-│         │  ToolRegistry.execute_tool() 中自动调用，零配置                     │
-│         └────────────────────────────────────────────────────────────────────│
+│  │   v0.3 (D)   │  │   v0.3 (D)   │  │ v0.1 工具部分 │  │ ★ v0.1 核心  │    │
+│  │              │  │              │  │ v0.3 LLM 重试 │  │              │    │
+│  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘    │
+│                                                                             │
+│  v0.1 仅做：① 工具异常→ToolResult(success=False) 不抛异常；                   │
+│           ② Provider 不可用→ConfigError 启动期 fail-fast；                  │
+│           ③ Config 驱动 Provider 切换、模型/温度/max_steps 等运行参数。       │
 └─────────────────────────────────────────────────────────────────────────────┘
 
-### 5.2 目录结构
+### 5.2 目录结构（**权威定义** — 任务卡的"文件"列必须与本表一致）
+
+> 标记说明（与 §0.2 速查矩阵 / §1.4 后续路线一致）：
+> ★ = v0.1 MVP（必做）｜◇ = v0.2 Core 增强（多 Provider + 后续 Agent 范式）｜△ = v0.3 Observability（D 阶段）｜◯ = v0.4 Memory（E 阶段）｜▽ = v0.5 Examples（F 阶段）
+>
+> v0.1 不创建 `config/settings.yaml` 文件；预留 `kagent/memory/` `kagent/context/` 仅放空 `__init__.py` 占位。
 
 ```
-kagent/                              # ★ = v0.1 MVP 文件
-├── config/
-│   └── settings.yaml
-├── kagent/
+Kgent/
+├── kagent/                          # 包根
+│   ├── __init__.py                  ★ 顶层导出（SimpleAgent / ReActAgent / AgentLLM / Config / KagentError 等）
 │   ├── core/
-│   │   ├── __init__.py              ★
-│   │   ├── config.py                ★ Config 类
-│   │   ├── exceptions.py            ★ KagentError / AgentError / LLMError / ToolError / ConfigError
-│   │   ├── llm/                     ★ LLM 调用层（可插拔注册制）
-│   │   │   ├── __init__.py          ★ 统一导出
-│   │   │   ├── models.py            ★ LLMResponse + LLMChunk
-│   │   │   ├── base.py              ★ LLMProvider(ABC) + LLMProviderRegistry
-│   │   │   ├── factory.py           ★ AgentLLM + PROVIDER_CONFIG
-│   │   │   └── providers.py         ★ OpenAIProvider（可插拔实现）
-│   │   ├── agent/                   ★ Agent 基类 + Message 系统
-│   │   │   ├── __init__.py          ★
-│   │   │   ├── base.py              ★ Agent(ABC)
-│   │   │   └── message.py           ★ Message 类
-│   │   └── tracing/                 ★ 链路追踪
-│   │       ├── __init__.py          ★
-│   │       ├── models.py            ★ Span + SpanType + SpanStatus
-│   │       ├── tracer.py            ★ Tracer 单例
-│   │       └── exporter.py          ★ TraceExporter
+│   │   ├── __init__.py              ★ 统一导出 core 子模块的公开符号
+│   │   ├── config.py                ★ A3 Config 类（Pydantic）+ from_env() + load_config()
+│   │   ├── exceptions.py            ★ C2 KagentError / AgentError / LLMError / ToolError / ConfigError（双字段）
+│   │   ├── agent.py                 ★ B1 Agent(ABC) — 单文件，不做 agent/ 子包
+│   │   ├── message.py               ★ B1 Message(BaseModel)
+│   │   ├── llm/                     ★ A4-A6 LLM 调用层（package）
+│   │   │   ├── __init__.py          ★ 统一导出 LLM 子模块的公开符号
+│   │   │   ├── models.py            ★ A4 LLMResponse + LLMChunk
+│   │   │   ├── base.py              ★ A4 LLMProvider(ABC) + LLMProviderRegistry
+│   │   │   ├── factory.py           ★ A5 AgentLLM + PROVIDER_CONFIG（含 lazy-load）
+│   │   │   └── providers.py         ★ A6 OpenAIProvider
+│   │   └── tracing/                 △ D1-D2 链路追踪（package）
+│   │       ├── __init__.py          △
+│   │       ├── models.py            △ Span + SpanType + SpanStatus
+│   │       ├── tracer.py            △ Tracer 单例
+│   │       └── exporter.py          △ TraceExporter
 │   ├── agents/
 │   │   ├── __init__.py              ★
-│   │   ├── simple_agent.py          ★ SimpleAgent
-│   │   ├── react_agent.py           ★ ReActAgent
-│   │   ├── reflection_agent.py      (v0.2+)
-│   │   ├── plan_solve_agent.py      (v0.2+)
-│   │   └── function_call_agent.py   (v0.2+)
+│   │   ├── simple_agent.py          ★ B2 / C6 SimpleAgent
+│   │   ├── react_agent.py           ★ B3 / C7 ReActAgent
+│   │   ├── plan_solve_agent.py      ◇ B4 (v0.2+)
+│   │   ├── reflection_agent.py      ◇ B5 (v0.2+)
+│   │   └── function_call_agent.py   ◇ B6 / C9 (v0.2+)
 │   ├── tools/
 │   │   ├── __init__.py              ★
-│   │   ├── base.py                  ★ Tool + ToolParameter + ToolResult
-│   │   ├── registry.py              ★ ToolRegistry
-│   │   ├── mcp_tool.py              (v0.3+)
+│   │   ├── base.py                  ★ A7 Tool + ToolParameter + ToolResult
+│   │   ├── registry.py              ★ A7 ToolRegistry（含 enable/disable lifecycle）
+│   │   ├── mcp_tool.py              △ D4 (v0.3)
 │   │   └── builtin/
 │   │       ├── __init__.py          ★
-│   │       ├── calculator.py        ★ CalculatorTool
-│   │       └── search.py            ★ SearchTool
-│   ├── memory/                      (v0.4+, 目录预留)
-│   │   ├── __init__.py
-│   │   ├── base.py
-│   │   ├── manager.py
-│   │   ├── working.py
-│   │   ├── episodic.py
-│   │   ├── semantic.py
-│   │   └── tool.py
-│   ├── context/                     (v0.4+, 目录预留)
-│   │   ├── __init__.py
-│   │   └── builder.py
-│   └── __init__.py                  ★
+│   │       ├── calculator.py        ★ A8 CalculatorTool
+│   │       └── search.py            ★ A8 SearchTool
+│   ├── memory/                      ◯ v0.4，v0.1 仅 __init__.py 占位
+│   │   └── __init__.py              ★（占位，无导出）
+│   └── context/                     ◯ v0.4，v0.1 仅 __init__.py 占位
+│       └── __init__.py              ★（占位，无导出）
 ├── tests/
+│   ├── __init__.py                  ★
 │   ├── unit/
-│   │   ├── test_llm.py              ★
-│   │   ├── test_tools.py            ★
-│   │   ├── test_tracing.py          ★
-│   │   ├── test_agent.py            ★
-│   │   ├── test_message.py          ★
-│   │   ├── test_config.py           ★
-│   │   ├── test_exceptions.py       ★
-│   │   ├── test_memory.py           (v0.4+)
-│   │   ├── test_context.py          (v0.4+)
-│   │   ├── test_note_terminal.py    (v0.4+)
-│   │   └── test_fault_tolerance.py  (v0.3+)
+│   │   ├── __init__.py              ★
+│   │   ├── test_smoke.py            ★ A2 import 烟雾测试
+│   │   ├── test_config.py           ★ A3
+│   │   ├── test_llm.py              ★ A4-A6
+│   │   ├── test_tools.py            ★ A7-A8
+│   │   ├── test_message.py          ★ B1
+│   │   ├── test_agent.py            ★ B1-B3
+│   │   ├── test_exceptions.py       ★ C2
+│   │   ├── test_tracing.py          △ D1-D2
+│   │   ├── test_fault_tolerance.py  △ D7
+│   │   ├── test_memory.py           ◯
+│   │   ├── test_context.py          ◯
+│   │   └── test_note_terminal.py    ◯
 │   ├── integration/
-│   │   ├── test_agent_with_tool.py  ★
-│   │   ├── test_agent_with_tracing.py ★
-│   │   ├── test_llm_tool_wire.py    ★
-│   │   ├── test_framework_import.py ★ (C8)
-│   │   ├── test_mcp.py              (v0.3+)
-│   │   ├── test_memory_tool.py      (v0.4+)
-│   │   ├── test_context.py          (v0.4+)
-│   │   └── test_pip_install.py      ★ (C8)
-│   ├── e2e/
-│   │   └── test_react_agent.py      (手动, 真实 LLM)
+│   │   ├── __init__.py              ★
+│   │   ├── test_llm_tool_wire.py    ★ A 阶段集成
+│   │   ├── test_agent_with_tool.py  ★ B 阶段集成（B3 后）
+│   │   ├── test_framework_import.py ★ C8 import 全量验证
+│   │   ├── test_pip_install.py      ★ C8 editable install 验证
+│   │   ├── test_agent_with_tracing.py △ D3
+│   │   ├── test_mcp.py              △ D4-D6
+│   │   ├── test_memory_tool.py      ◯
+│   │   └── test_context.py          ◯
+│   ├── e2e/                         （v0.1 手动跑，CI 不强制）
+│   │   └── test_react_agent.py      ★ 黄金测试集（手动, 真实 LLM）
 │   └── fixtures/
-│       └── .env.test                ★
-├── pyproject.toml                   ★
-├── .env.example                     ★
-├── .gitignore                       ★ (.venv/, .env, __pycache__/, *.egg-info/)
-└── README.md                        ★
+│       └── .env.test                ★ A2
+├── pyproject.toml                   ★ A1
+├── .env.example                     ★ A1
+├── .gitignore                       ★ A1（.venv/, .env, .env.*, __pycache__/, *.egg-info/, dist/, build/）
+└── README.md                        ★ C8（v0.1 最小内容：项目定位 + pip install + quickstart）
 ```
 
 ### 5.3 数据流
@@ -1052,14 +1243,40 @@ kagent/                              # ★ = v0.1 MVP 文件
 
 ### 5.4 配置驱动
 
-```yaml
-# .env
-LLM_PROVIDER=openai
-LLM_MODEL_ID=gpt-4o
-LLM_API_KEY=sk-xxx
-LLM_BASE_URL=https://api.openai.com/v1
+#### v0.1 — 仅 `.env`（单一配置源）
 
-# settings.yaml
+```bash
+# 必填
+LLM_PROVIDER=openai          # openai | ollama | vllm
+LLM_MODEL_ID=gpt-4o
+LLM_API_KEY=sk-xxx           # ollama / vllm 可空
+
+# 可选（留空走 PROVIDER_CONFIG.default_base_url）
+LLM_BASE_URL=
+LLM_TIMEOUT=60
+LLM_TEMPERATURE=0.0
+LLM_MAX_TOKENS=
+
+# Agent 行为
+MAX_STEPS=5
+MAX_HISTORY_LENGTH=50
+
+# 工具
+SEARCH_BACKEND=tavily        # tavily | serpapi
+TAVILY_API_KEY=
+SERPAPI_API_KEY=
+
+# 调试
+DEBUG=false
+LOG_LEVEL=INFO
+```
+
+> v0.1 **不引入 settings.yaml**。所有配置由 `Config.from_env()` 读取上述 env vars。`pyyaml` 也不在核心依赖里。
+
+#### v0.3+ — 分层 `.env` + `settings.yaml`（D 阶段引入）
+
+```yaml
+# settings.yaml（v0.3+）—— 静态行为与组合配置
 agent:
   max_steps: 5
   temperature: 0.0
@@ -1071,6 +1288,8 @@ observability:
   trace_enabled: true
   trace_export: console     # console | json | none
 ```
+
+> 分层原则：`.env` 装 **凭证 / 端点**（运行环境差异），`settings.yaml` 装 **行为参数**（与运行环境无关）。Config 加载顺序：硬编码默认值 < `settings.yaml` < `.env` < 进程环境变量 < 显式 kwargs。
 
 ---
 
@@ -1106,20 +1325,20 @@ observability:
 
 | 编号 | 任务 | 状态 | 完成日期 | 备注 |
 |------|------|------|---------|------|
-| A1 | 初始化目录树 | [x] | 2026-05-07 | pyproject.toml + 目录骨架 + .env.example |
+| A1 | 初始化目录树 | [x] | 2026-05-07 | pyproject.toml + 目录骨架 + .env.example **⚠️ 待修：build-backend 应为 `setuptools.build_meta`** |
 | A2 | 引入测试框架 | [x] | 2026-05-07 | tests/ 目录 + smoke tests |
 | A3 | .env 配置加载 | [x] | 2026-05-07 | Config 类 + from_env + validate |
 | A4 | LLMProvider 基类 + Registry | [x] | 2026-05-07 | LLMResponse/Chunk + ABC + Registry |
-| A5 | AgentLLM 门面 + 配置驱动 | [x] | 2026-05-07 | PROVIDER_CONFIG + invoke/stream |
-| A6 | OpenAIProvider | [x] | 2026-05-07 | chat + chat_stream + LLMError |
-| A7 | Tool + ToolRegistry | [x] | 2026-05-07 | Tool基类 + 生命周期管理 |
-| A8 | CalculatorTool + SearchTool | [x] | 2026-05-07 | AST安全解析 + SerpApi/Tavily |
+| A5 | AgentLLM 门面 + 配置驱动 | [x] | 2026-05-07 | PROVIDER_CONFIG + invoke/stream **⚠️ 待修：补 lazy-load（`class` 字段反射 import + auto-register）** |
+| A6 | OpenAIProvider | [x] | 2026-05-07 | chat + chat_stream + LLMError **⚠️ 待修：client 在 `__init__` 创建一次复用，传入 timeout** |
+| A7 | Tool + ToolRegistry | [x] | 2026-05-07 | Tool基类 + 生命周期管理（含 enable/disable，超出 spec 原计划） |
+| A8 | CalculatorTool + SearchTool | [x] | 2026-05-07 | AST安全解析 + Tavily/SerpApi **⚠️ 待修：拆 `_CONSTANTS` / `_FUNCTIONS`，移除 `pi()` 写法；默认后端改 tavily** |
 
 #### 阶段 B — Agent 范式实现
 
 | 编号 | 任务 | 状态 | 完成日期 | 备注 |
 |------|------|------|---------|------|
-| B1 | Agent 基类 + Message 系统 | [ ] | | |
+| B1 | Agent 基类 + Message 系统 | [x] | 2026-05-07 | **⚠️ 已实现待 commit**（git untracked） |
 | B2 | SimpleAgent | [ ] | | |
 | B3 | ReActAgent | [ ] | | |
 | B4 | PlanAndSolveAgent | [ ] | | v0.2+ |
@@ -1159,7 +1378,7 @@ observability:
 |------|------|------|---------|------|
 | E1 | Memory 基类 + MemoryManager | [ ] | | |
 | E2 | WorkingMemory + EpisodicMemory | [ ] | | |
-| E2.5 | SemanticMemory | [ ] | | v0.3 可选 |
+| E2.5 | SemanticMemory | [ ] | | v0.4 可选 |
 | E3 | MemoryTool | [ ] | | |
 | E4 | ContextBuilder | [ ] | | |
 | E5 | NoteTool + TerminalTool | [ ] | | |
@@ -1181,11 +1400,12 @@ observability:
 | 维度 | 内容 |
 |------|------|
 | 目标 | 创建 `kagent/` 目录骨架、`pyproject.toml`（含依赖）、`.env.example`、所有 `__init__.py`、创建 `.venv` 虚拟环境并安装依赖 |
-| 文件 | `pyproject.toml` `.env.example` `.gitignore`（含 `.venv/`、`.env`、`__pycache__/`） `kagent/__init__.py` `kagent/core/__init__.py` `kagent/agents/__init__.py` `kagent/tools/__init__.py` `kagent/tools/builtin/__init__.py` `kagent/memory/__init__.py` `kagent/context/__init__.py` |
-| pyproject.toml 依赖 | 按 §3.0 依赖清单完整声明，不得遗漏或自行引入未列出的库 |
-| .env.example | `LLM_PROVIDER=openai` `LLM_MODEL_ID=gpt-4o` `LLM_API_KEY=your-api-key-here` `LLM_BASE_URL=https://api.openai.com/v1` `LLM_TIMEOUT=60` `SEARCH_BACKEND=serpapi` `SERPAPI_API_KEY=` `TAVILY_API_KEY=` `TRACE_ENABLED=true` `TRACE_EXPORT=console` `LOG_LEVEL=INFO` `DEBUG=false` `MAX_HISTORY_LENGTH=50` `MAX_STEPS=5` |
-| 验收 | `python -m venv .venv && source .venv/bin/activate && pip install -e ".[dev]"` 成功 `python -c "import kagent"` 不报错 `python -c "import kagent.memory; import kagent.context"` 不报错 `pyproject.toml` 包含全部依赖 `pytest -q tests/unit/test_smoke.py` 通过 |
-| 测试 | `python -m compileall kagent/` |
+| 文件 | `pyproject.toml` `.env.example` `.gitignore`（含 `.venv/`、`.env`、`.env.*`、`__pycache__/`、`*.egg-info/`、`dist/`、`build/`） 以及 §5.2 目录树中所有 ★ 标记的 `__init__.py`（核心：`kagent/__init__.py`、`kagent/core/__init__.py`、`kagent/agents/__init__.py`、`kagent/tools/__init__.py`、`kagent/tools/builtin/__init__.py`、`kagent/memory/__init__.py`（占位）、`kagent/context/__init__.py`（占位）） |
+| pyproject.toml | 严格按 §3.0 v0.1 pyproject 模板声明：`build-backend = "setuptools.build_meta"`（**不要写 `setuptools.backends._legacy:_Backend`，会让干净环境的 pip install 失败**）；只有 3 个核心依赖 + dev extra |
+| .env.example | 严格按 §5.4 v0.1 字段清单：`LLM_PROVIDER` / `LLM_MODEL_ID` / `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_TIMEOUT` / `LLM_TEMPERATURE` / `LLM_MAX_TOKENS` / `MAX_STEPS` / `MAX_HISTORY_LENGTH` / `SEARCH_BACKEND` / `TAVILY_API_KEY` / `SERPAPI_API_KEY` / `DEBUG` / `LOG_LEVEL`。所有字段都必须能被 `Config.from_env()` 读取（A3 任务负责字段映射） |
+| 依赖 | 无（项目起点） |
+| 验收 | `python -m venv .venv && .venv/Scripts/activate && pip install -e ".[dev]"` 成功（Windows）/ `python -m venv .venv && source .venv/bin/activate && pip install -e ".[dev]"` 成功（Unix） `python -c "import kagent"` 不报错 `python -c "import kagent.memory; import kagent.context"` 不报错（占位包可导入） `python -m compileall kagent/` 通过 `pyproject.toml` 与 §3.0 模板逐字段一致 |
+| 测试 | A1 不写测试，A2 引入 pytest 时再加 smoke test |
 
 
 ### A2：引入测试框架
@@ -1193,8 +1413,9 @@ observability:
 | 维度 | 内容 |
 |------|------|
 | 目标 | 创建 `tests/` 目录、pytest 配置、冒烟测试 |
-| 文件 | `pyproject.toml`（添加 pytest 配置） `tests/__init__.py` `tests/unit/__init__.py` `tests/unit/test_smoke.py` `tests/fixtures/.env.test` |
-| 类/函数 | `test_import()` — 验证 `import kagent` 成功 |
+| 文件 | `pyproject.toml`（添加 `[tool.pytest.ini_options]`） `tests/__init__.py` `tests/unit/__init__.py` `tests/integration/__init__.py` `tests/unit/test_smoke.py` `tests/fixtures/.env.test` |
+| 依赖 | A1 |
+| 类/函数 | `test_import()` — 验证 `import kagent` 成功 `test_import_submodules()` — 验证占位包 `kagent.memory` / `kagent.context` 可导入 |
 | 验收 | `pytest -q` 通过冒烟测试 |
 | 测试 | `pytest -q tests/unit/test_smoke.py` |
 
@@ -1204,9 +1425,10 @@ observability:
 | 维度 | 内容 |
 |------|------|
 | 目标 | 实现 `Config` 类，从 `.env` 文件 + 环境变量读取所有配置，必填字段校验 |
-| 文件 | `kagent/core/config.py`（`.env.example` 已在 A1 创建） |
-| 类/函数 | `Config` (Pydantic BaseModel) — `default_provider: str = "openai"`, `default_model: str = "gpt-4o"`, `temperature: float = 0.0`, `max_tokens: int | None = None`, `debug: bool = False`, `log_level: str = "INFO"`, `max_history_length: int = 50`, `max_steps: int = 5`, `trace_enabled: bool = True`, `trace_export: str = "console"` `Config.from_env()` — 从环境变量创建（优先读 `.env` 文件 via `dotenv`） `validate_config()` — 校验 `LLM_PROVIDER` 存在、`LLM_API_KEY` 非空（ollama/vllm 除外） |
-| 验收 | `Config.from_env()` 在有 `.env` 文件时返回有效 Config 实例 缺 `LLM_API_KEY` 且 Provider 非 ollama/vllm 时抛 `ConfigError` 并包含可读错误信息 `Config().debug == False` 默认值正确 `Config.from_env().model_dump()` 返回完整字典 |
+| 文件 | `kagent/core/config.py` `kagent/core/exceptions.py`（仅 `ConfigError` 占位，C2 再升级双字段） |
+| 依赖 | A1 |
+| 类/函数 | `Config` (Pydantic BaseModel) — 字段对应 §5.4 v0.1 .env 清单：`default_provider`/`default_model`/`api_key`/`base_url`/`timeout`/`temperature`/`max_tokens`/`debug`/`log_level`/`max_history_length`/`max_steps`。`Config.from_env(env_file=None)` — 优先读 `.env` 文件（dotenv）→ 再读 process env → 实例化 → `validate_config()`。`validate_config()` — 校验 `LLM_API_KEY` 非空（ollama/vllm 除外）。`load_config()` 便捷函数。 |
+| 验收 | `Config.from_env()` 在有 `.env` 文件时返回有效 Config 实例 缺 `LLM_API_KEY` 且 Provider 非 ollama/vllm → 抛 `ConfigError` 含可读中文消息 `Config().debug == False` 默认值正确 `Config.from_env().model_dump()` 返回完整字典 数值字段（`max_steps` / `temperature`）格式错误时抛 `ValueError`（pydantic 校验） |
 | 测试 | `pytest -q tests/unit/test_config.py` |
 
 
@@ -1215,45 +1437,49 @@ observability:
 | 维度 | 内容 |
 |------|------|
 | 目标 | 定义 LLM Provider 的抽象接口和注册中心 |
-| 文件 | `kagent/core/llm.py` |
+| 文件 | `kagent/core/llm/models.py`（`LLMResponse` / `LLMChunk`）+ `kagent/core/llm/base.py`（`LLMProvider` / `LLMProviderRegistry`）+ `kagent/core/llm/__init__.py`（导出） |
+| 依赖 | A1, A2 |
 | 类/函数 | `LLMResponse(BaseModel)` / `LLMChunk(BaseModel)` `LLMProvider(ABC)` — `chat(messages, model, temperature, tools=None, tool_choice=None) -> LLMResponse` / `chat_stream(...) -> Iterator[LLMChunk]` `LLMProviderRegistry` — `register(name, provider)` / `get(name)` / `list_providers()` |
-| 验收 | `LLMProvider()` 不能直接实例化 `registry.register("test", mock_provider)` 后 `registry.get("test")` 返回 mock_provider `registry.get("nonexistent")` 抛 `ValueError` |
-| 测试 | `pytest -q tests/unit/test_llm.py -k "test_provider_registry"` |
+| 验收 | `LLMProvider()` 不能直接实例化 `registry.register("test", mock_provider)` 后 `registry.get("test")` 返回 mock_provider `registry.get("nonexistent")` 抛 `ValueError`（错误信息含可用 provider 列表） `registry.register("x", "not a provider")` 抛 `TypeError` |
+| 测试 | `pytest -q tests/unit/test_llm.py -k "TestLLMProvider or TestLLMProviderRegistry"` |
 
 
-### A5：AgentLLM 门面 + 配置驱动选择
+### A5：AgentLLM 门面 + 配置驱动选择（含 lazy-load）
 
 | 维度 | 内容 |
 |------|------|
-| 目标 | 实现 `AgentLLM` 类，从配置读取 Provider 名称并自动选择 |
-| 文件 | `kagent/core/llm.py` |
-| 类/函数 | `PROVIDER_CONFIG` 配置字典 `AgentLLM.__init__(provider=None, model=None, api_key=None, base_url=None, timeout=60)` `AgentLLM.register_provider(name, provider)` 类方法 `AgentLLM.invoke(messages, temperature, tools=None, tool_choice=None) -> LLMResponse` 非流式 `AgentLLM.stream(messages, temperature, tools=None) -> Iterator[LLMChunk]` 流式 |
-| 验收 | `AgentLLM()` 自动读取 `LLM_PROVIDER` 环境变量 `AgentLLM.register_provider("test", mock)` 后 `AgentLLM(provider="test")` 使用 mock 缺 Provider 时抛 `ConfigError` |
-| 测试 | `pytest -q tests/unit/test_llm.py -k "test_agent_llm_init"` |
+| 目标 | 实现 `AgentLLM` 类，从配置读取 Provider 名称并自动选择；**当 provider 未注册时通过 PROVIDER_CONFIG[name].class 反射 lazy-load 并自动 register**，让 `AgentLLM()` 真正开箱即用 |
+| 文件 | `kagent/core/llm/factory.py`（`AgentLLM` + `PROVIDER_CONFIG` + lazy-load 逻辑）+ `kagent/core/llm/__init__.py`（导出） |
+| 依赖 | A3 (Config), A4 (Registry) |
+| 类/函数 | `PROVIDER_CONFIG` 配置字典（含 `class` 字段，例如 `"class": "kagent.core.llm.providers.OpenAIProvider"`）。`AgentLLM.__init__(provider=None, model=None, api_key=None, base_url=None, timeout=60, config=None)`。`AgentLLM.register_provider(name, provider)` 类方法。`AgentLLM._get_or_load_provider()` — 先查 registry，未注册则查 PROVIDER_CONFIG，反射 import + 实例化 + register，仍失败抛 `ConfigError`。`AgentLLM.invoke(messages, temperature, tools=None, tool_choice=None) -> LLMResponse`。`AgentLLM.stream(messages, temperature, tools=None) -> Iterator[LLMChunk]`。 |
+| 验收 | `AgentLLM(config=Config(api_key="sk-test"))` **不需要预先 `register_provider`** 即可创建（自动 lazy-load OpenAIProvider）。`AgentLLM()` 从 `LLM_PROVIDER` env 读取 provider 名。`AgentLLM.register_provider("test", mock)` 后 `AgentLLM(provider="test")` 优先使用已注册实例（不再 lazy-load）。`provider="unknown"` 且 PROVIDER_CONFIG 无该项 → 抛 `ConfigError`。explicit api_key/base_url/timeout 覆盖 Config 字段并被 lazy-load 出来的 provider 实例使用。 |
+| 测试 | `pytest -q tests/unit/test_llm.py -k "TestAgentLLMInit or TestAgentLLMInvoke or test_lazy_load"` |
 
 
 ### A6：OpenAIProvider（可插拔 Provider 示例实现）
 
 | 维度 | 内容 |
 |------|------|
-| 目标 | 实现首个具体 Provider，验证 A4/A5 的可插拔架构可用：实现 `LLMProvider` 接口 → 注册到 `LLMProviderRegistry` → 改 `.env` 一行配置即可切换。OpenAI 兼容接口作为 v0.1 MVP 的默认实现，但架构上不绑定任何特定服务商 |
-| 文件 | `kagent/core/llm.py` |
-| 类/函数 | `OpenAIProvider(api_key, base_url, timeout)` — 实现 `LLMProvider.chat() -> LLMResponse` + `chat_stream() -> Iterator[LLMChunk]`，内部使用 `openai` SDK 的 `chat.completions.create`。构造函数参数全部从 `PROVIDER_CONFIG` + `.env` 自动注入，用户无需手写 |
-| 验收 | Mock OpenAI API 响应 → `provider.chat()` 返回 `LLMResponse(content="...")` `provider.chat_stream()` yield 多个 `LLMChunk` API 超时 → 抛 `LLMError` 验证：切换 `LLM_PROVIDER=ollama` + `LLM_BASE_URL=http://localhost:11434/v1` 后，只需实现一个新的 `OllamaProvider(LLMProvider)` 并注册，Agent 代码零改动 |
-| 测试 | `pytest -q tests/unit/test_llm.py -k "test_openai_provider"` |
+| 目标 | 实现首个具体 Provider，验证 A4/A5 的可插拔架构可用：实现 `LLMProvider` 接口 → 由 A5 的 lazy-load 自动注册 → 改 `.env` 一行配置即可切换。OpenAI 兼容接口作为 v0.1 MVP 的默认实现，但架构上不绑定任何特定服务商 |
+| 文件 | `kagent/core/llm/providers.py`（`OpenAIProvider`）+ `kagent/core/llm/__init__.py`（导出） |
+| 依赖 | A4 (LLMProvider 基类) |
+| 类/函数 | `OpenAIProvider(api_key, base_url, timeout=60)` — 实现 `LLMProvider.chat() -> LLMResponse` + `chat_stream() -> Iterator[LLMChunk]`。**构造函数里建一次 `self._client = OpenAI(api_key=..., base_url=..., timeout=timeout)`，chat/stream 复用该 client，不再每次 new**。构造参数由 A5 的 lazy-load 从 `PROVIDER_CONFIG` + `Config` 自动注入，用户无需手写 |
+| 验收 | Mock OpenAI API 响应 → `provider.chat()` 返回 `LLMResponse(content="...")`。`provider.chat_stream()` yield 多个 `LLMChunk`。任意异常（含超时）→ 包装为 `LLMError` 抛出（A 阶段单字段，C2 升级双字段）。tool_calls 字段被正确提取（id / function.name / function.arguments）。client 实例只在 `__init__` 创建一次（性能 + 连接池）。可插拔验证：实现一个 `OllamaProvider(LLMProvider)` 并加进 `PROVIDER_CONFIG`，仅靠改 `.env` 的 `LLM_PROVIDER` 即可切换，Agent 代码零改动 |
+| 测试 | `pytest -q tests/unit/test_llm.py -k "TestOpenAIProvider"` |
 
-> **可插拔验证**：A6 的核心价值是证明"写一个类 + 一行注册 = 接入新服务商"的架构可行。OllamaProvider / ZhipuProvider 等在 C4 实现，但只需实现 `LLMProvider` 接口并注册即可，Agent 层代码零改动。
+> **可插拔验证**：A6 的核心价值是证明"写一个类 + 一行 PROVIDER_CONFIG = 接入新服务商"的架构可行。OllamaProvider / ZhipuProvider / VLLMProvider 等在 C4 实现，但只需实现 `LLMProvider` 接口 + 在 `PROVIDER_CONFIG` 中加一行映射即可，Agent 层代码零改动。
 
 
-### A7：Tool 基类 + ToolRegistry
+### A7：Tool 基类 + ToolRegistry（含 lifecycle）
 
 | 维度 | 内容 |
 |------|------|
-| 目标 | 定义 Tool 抽象接口和可插拔注册中心 |
-| 文件 | `kagent/tools/base.py` `kagent/tools/registry.py` |
-| 类/函数 | `ToolResult(BaseModel)` — `content`, `success`, `error`, `metadata` `ToolParameter(BaseModel)` — `name`, `type`, `description`, `required`, `default` `Tool(ABC)` — `run(parameters) -> ToolResult` / `get_parameters() -> list[ToolParameter]` / `to_openai_schema()` `ToolRegistry` — `register_tool(tool)` / `register_function(name, desc, func)` / `unregister(name)` / `execute_tool(name, arguments) -> ToolResult` / `get_tools_description() -> str` |
-| 验收 | `Tool()` 不能直接实例化 `registry.register_function("echo", "...", lambda args: args["text"])` 后 `registry.execute_tool("echo", {"text": "hi"})` 返回 `ToolResult(success=True, content="hi")` `registry.unregister("echo")` 后 `registry.execute_tool("echo", ...)` 返回 `ToolResult(success=False, content="[ERROR] 工具 'echo' 未注册")` |
-| 测试 | `pytest -q tests/unit/test_tools.py -k "test_registry"` |
+| 目标 | 定义 Tool 抽象接口和可插拔注册中心，支持运行时 enable/disable |
+| 文件 | `kagent/tools/base.py` `kagent/tools/registry.py` `kagent/tools/__init__.py`（导出） |
+| 依赖 | A1 |
+| 类/函数 | `ToolResult(BaseModel)` — `content`, `success`, `error`, `metadata` `ToolParameter(BaseModel)` — `name`, `type`, `description`, `required`, `default` `Tool(ABC)` — `run(parameters) -> ToolResult` / `get_parameters() -> list[ToolParameter]` / `to_openai_schema()`（v0.1 提前实现，B6 / C9 复用） `ToolRegistry` — 注册：`register_tool(tool)` / `register_function(name, desc, func, parameters=None)` / `unregister(name)`；lifecycle：`disable(name)` / `enable(name)` / `is_enabled(name)` / `is_registered(name)`；执行：`execute_tool(name, arguments) -> ToolResult`（按 §3.7 T1-T3 永远不抛）；自省：`list_tools() -> dict` / `get_tools_description() -> str`（用于注入 Prompt） |
+| 验收 | `Tool()` 不能直接实例化 `register_function("echo", "...", lambda a: a["text"])` 后 `execute_tool("echo", {"text":"hi"})` 返回 `ToolResult(success=True, content="hi")` `unregister("echo")` 后再 execute → `success=False, content` 含 "未注册" `disable("calc")` 后 execute → `success=False, content` 含 "已被禁用"；`enable("calc")` 后恢复 `get_tools_description()` 不包含已 disable 的工具 工具内部抛 `ValueError` → `execute_tool` 返回 `success=False`，**不向上抛**（§3.7 T3） |
+| 测试 | `pytest -q tests/unit/test_tools.py -k "TestTool* or TestToolRegistry or TestToolLifecycle"` |
 
 
 ### A8：CalculatorTool + SearchTool
@@ -1261,10 +1487,11 @@ observability:
 | 维度 | 内容 |
 |------|------|
 | 目标 | 实现两个内置工具作为 Tool 子类示例 |
-| 文件 | `kagent/tools/builtin/calculator.py` `kagent/tools/builtin/search.py` |
-| 类/函数 | `CalculatorTool(Tool)` — `run({"expression": "2+3*4"}) -> ToolResult`，用 `ast` 安全解析 `SearchTool(Tool)` — v0.1 使用单一搜索后端（SerpApi 或 Tavily 二选一，由环境变量 `SEARCH_BACKEND` + 对应 API Key 决定），不做降级链 |
-| 验收 | `calculator.run({"expression": "2+3*4"}).content` 返回 `"14"` `calculator.run({"expression": "sqrt(16)"}).content` 返回 `"4.0"` `search.run({"query": "Python"})` 返回 `ToolResult(success=True, content=非空)`（需配置 API Key）；未配置 API Key → 返回 `ToolResult(success=False, content="[ERROR] 搜索 API Key 未配置")` |
-| 测试 | `pytest -q tests/unit/test_tools.py -k "test_calculator"` |
+| 文件 | `kagent/tools/builtin/calculator.py` `kagent/tools/builtin/search.py` `kagent/tools/builtin/__init__.py`（导出） |
+| 依赖 | A7 (Tool 基类) |
+| 类/函数 | **CalculatorTool(Tool)** — `run({"expression": "2+3*4"}) -> ToolResult`，用 `ast` 安全解析。常量与函数表分离：`_CONSTANTS = {"pi": math.pi, "e": math.e}`（被 `ast.Name` 解析），`_FUNCTIONS = {"sqrt", "sin", "cos", "tan", "log", "log10", "log2", "exp", "abs", "round", "min", "max", "pow"}`（被 `ast.Call` 解析）。**不要把 pi/e 也注册成函数**（避免 `pi()` 这种奇怪写法）。`SearchTool(Tool)` — v0.1 使用单一搜索后端，**默认 `SEARCH_BACKEND=tavily`**（与 .env.example 一致），由 `SEARCH_BACKEND` env + 对应 API Key 决定后端，不做降级链 |
+| 验收 | `calculator.run({"expression": "2+3*4"}).content == "14"`；`sqrt(16)` → `"4.0"`；`sin(pi/2)` → `"1.0"`（pi 作为常量）；`pi()` → 失败（"不支持的函数: pi"）；`1/0` → `success=False, content` 含 "除数不能为零"。`search.run({"query": "Python"})` 返回 `ToolResult(success=True, content=非空)`（需配置 API Key）；未配置 API Key → 返回 `ToolResult(success=False, content="[ERROR] 搜索 API Key 未配置，请在 .env 中设置 ..."`） |
+| 测试 | `pytest -q tests/unit/test_tools.py -k "TestCalculatorTool or TestSearchTool"` |
 
 
 ### B1：Agent 基类 + Message 系统
@@ -1272,21 +1499,24 @@ observability:
 | 维度 | 内容 |
 |------|------|
 | 目标 | 定义所有 Agent 的统一接口和消息格式 |
-| 文件 | `kagent/core/agent.py` `kagent/core/message.py` |
-| 类/函数 | `Message(BaseModel)` — `content`, `role: Literal["user","assistant","system","tool"]`, `timestamp`, `metadata`, `to_dict()` `Agent(ABC)` — `__init__(name, llm, system_prompt, config)` / `@abstractmethod run(input_text) -> str` / `add_message()` / `clear_history()` / `get_history()` |
-| 验收 | `Agent()` 不能直接实例化 `Message(...)` 创建后 `to_dict()` 返回 OpenAI 格式 `{"role": ..., "content": ...}` |
-| 测试 | `pytest -q tests/unit/test_agent.py -k "test_message"` |
+| 文件 | `kagent/core/agent.py` `kagent/core/message.py` `kagent/core/__init__.py`（导出 `Agent` / `Message`） |
+| 依赖 | A4 (LLMProvider 用于类型注解), A5 (AgentLLM) |
+| 类/函数 | `Message(BaseModel)` — `content` / `role: Literal["user","assistant","system","tool"]` / `timestamp: datetime`（默认 `datetime.now(timezone.utc)`）/ `metadata: Optional[dict]` / `to_dict() -> {"role": ..., "content": ...}` `Agent(ABC)` — `__init__(name, llm, system_prompt=None, config=None)`（config 默认 `Config()`）/ `@abstractmethod run(input_text, **kwargs) -> str` / `add_message(message)`（按 `config.max_history_length` 自动 trim）/ `clear_history()` / `get_history()`（返回 history 副本，避免外部修改） |
+| 验收 | `Agent()` 不能直接实例化 `Message("hi","user").to_dict() == {"role":"user","content":"hi"}` 非法 role → pydantic 抛 `ValidationError` 添加 N+1 条消息（N=`max_history_length`）→ history 长度等于 N 且只保留最新 `get_history()` 返回的 list 修改不影响内部 history |
+| 测试 | `pytest -q tests/unit/test_message.py tests/unit/test_agent.py -k "TestMessage or TestAgentIsAbstract or TestAgentInit or TestAgentHistory"` |
 
 
 ### B2：SimpleAgent
 
 | 维度 | 内容 |
 |------|------|
-| 目标 | 实现基础对话 Agent，支持可选工具调用 |
-| 文件 | `kagent/agents/simple_agent.py` |
-| 类/函数 | `SimpleAgent(Agent)` — `run(input_text, max_steps=3)` `_run_with_tools(messages, input_text, max_steps)` — 循环 LLM + 工具 `_parse_tool_calls(text) -> list` — 正则匹配 `[TOOL_CALL:name:params]` `_execute_tool_call(tool_name, parameters) -> ToolResult` `add_tool(tool)` / `remove_tool(tool_name)` / `stream_run(input_text)` |
-| 验收 | 无工具时直接返回 LLM 响应 有工具时能解析 `[TOOL_CALL:calc:1+1]` 并执行 |
-| 测试 | `pytest -q tests/unit/test_agent.py -k "test_simple_agent"` |
+| 目标 | 实现基础对话 Agent，支持可选工具调用（基于 Prompt 约束式工具调用，与 OpenAI 原生 function calling 解耦） |
+| 文件 | `kagent/agents/simple_agent.py` `kagent/agents/__init__.py`（导出） |
+| 依赖 | B1, A5 (AgentLLM), A7 (ToolRegistry) |
+| 类/函数 | `SimpleAgent(Agent)` — `__init__(name, llm, system_prompt=None, config=None, tool_registry: ToolRegistry | None = None)` `run(input_text, max_steps=None) -> str`（`max_steps` 默认从 config 取） `_run_with_tools(messages, max_steps)` — 循环 LLM + 工具 `_parse_tool_calls(text) -> list[dict]` — 正则匹配 `[TOOL_CALL:name:params]`，捕获 0~N 个 `_execute_tool_call(tool_name, parameters_str) -> ToolResult` — 调 ToolRegistry，按 §3.7 T1-T3 处理 `add_tool(tool)` / `remove_tool(name)` / `stream_run(input_text)` |
+| 工具调用格式 | `[TOOL_CALL:name:params]`，`params` 为字符串，对内置工具默认包装为 `{"query": params}` 或 `{"expression": params}`（约定见 ReActAgent） |
+| 验收 | 无工具时 `run("hi")` 直接返回 mock LLM 响应 LLM 返回 `[TOOL_CALL:calculator:1+1]` → 解析 → 执行 CalculatorTool → Observation 注入 → 二次 LLM 调用 → 返回最终答案 工具不存在时（已被 unregister）→ Observation 含 "未注册"，循环继续，不抛异常 `max_steps` 超过 → 强制返回当前最佳答案，不抛异常（§3.7 A1） |
+| 测试 | `pytest -q tests/unit/test_agent.py -k "TestSimpleAgent"` |
 
 
 ### B3：ReActAgent
@@ -1294,11 +1524,13 @@ observability:
 | 维度 | 内容 |
 |------|------|
 | 目标 | 实现 Thought→Action→Observation 循环 |
-| 文件 | `kagent/agents/react_agent.py` |
-| 类/函数 | `ReActAgent(Agent)` — `run(input_text, max_steps=5)` `_parse_output(text) -> (thought, action)` — 正则匹配 `Thought:...\nAction:...` `_parse_action(action_text) -> (tool_name, tool_input)` |
-| Action 格式 | **`Action: ToolName[parameters]`** — 调用工具（parameters 为字符串，直接传给 `execute_tool(name, {"query": parameters})`）。**`Action: Finish[最终答案]`** — 终止循环，返回 `[最终答案]`。示例：`Action: Search[北京天气]` / `Action: Calculator[25 * 9/5 + 32]` / `Action: Finish[北京今天晴，25°C]` |
-| 验收 | Mock LLM 返回 `Action: Finish[答案]` → `run()` 返回答案 Mock LLM 返回 `Action: Search[query]` → 调用 SearchTool → 继续循环 达到 max_steps 后终止 |
-| 测试 | `pytest -q tests/unit/test_agent.py -k "test_react_agent"` |
+| 文件 | `kagent/agents/react_agent.py` `kagent/agents/__init__.py`（导出） |
+| 依赖 | B1, A5, A7, A8 |
+| 类/函数 | `ReActAgent(Agent)` — `__init__(name, llm, system_prompt=None, config=None, tool_registry=None)` `run(input_text, max_steps=None) -> str` `_parse_output(text) -> (thought: str | None, action: str | None)` — 正则匹配 `Thought:...\nAction:...` `_parse_action(action_text) -> (tool_name: str, tool_input: str)` — 解析 `ToolName[params]` `_format_prompt(input_text)` — 注入 `{tools}` `{history}` `{input}` |
+| Action 格式 | **`Action: ToolName[parameters]`** — 调用工具。`parameters` 为字符串，按工具名做参数包装：`Calculator` → `{"expression": params}`，`Search` → `{"query": params}`，其他 → `{"query": params}`（默认）。**`Action: Finish[最终答案]`** — 终止循环，返回 `最终答案`（去掉中括号）。示例：`Action: Search[北京天气]` / `Action: Calculator[25 * 9/5 + 32]` / `Action: Finish[北京今天晴，25°C]` |
+| 容错 | LLM 输出无 `Action:` → history 注入 `Observation: 格式错误，请严格遵循 Thought/Action 格式` 继续循环（§3.7 A2） 工具返回 `success=False` → `[ERROR] ...` 作为 Observation 喂回 LLM（§3.7 A4） |
+| 验收 | Mock LLM 返回 `Action: Finish[答案]` → `run()` 返回 `"答案"` Mock LLM 返回 `Action: Search[query]` → 调 SearchTool → Observation 注入 → 继续循环 达到 `max_steps` → 不抛异常，返回当前最佳答案 LLM 返回纯文本无 `Action:` → 循环继续注入错误提示，最终在 max_steps 时返回 |
+| 测试 | `pytest -q tests/unit/test_agent.py -k "TestReActAgent"` |
 
 
 ### B4：PlanAndSolveAgent
@@ -1338,44 +1570,49 @@ observability:
 
 | 维度 | 内容 |
 |------|------|
-| 目标 | 验证 A1 创建的目录树与 5.2 节一致，补充遗漏的 `__init__.py`，确保 `python -m compileall kagent/` 通过 |
-| 文件 | 检查并补充 `kagent/` 下所有 `__init__.py`（A1 已创建主要目录，C1 只做验证+修补） |
-| 类/函数 | 无 |
-| 验收 | `python -m compileall kagent/` 通过；`pip install -e .` 后 `from kagent import SimpleAgent, ReActAgent, AgentLLM, Config` 全部可用 |
-| 测试 | `python -c "from kagent import SimpleAgent, ReActAgent, AgentLLM, Config; print('OK')"` |
+| 目标 | 验证 A1 创建的目录树与 §5.2 一致，补充遗漏的 `__init__.py`，确保 `python -m compileall kagent/` 通过，确保所有顶层符号可从 `kagent` 直接 import |
+| 文件 | 检查并补充：`kagent/__init__.py`（顶层导出 SimpleAgent / ReActAgent / AgentLLM / Config / Message / KagentError 等）、`kagent/core/__init__.py`、`kagent/agents/__init__.py`、`kagent/tools/__init__.py` |
+| 依赖 | A1-A8, B1-B3 |
+| 类/函数 | 无新增逻辑，仅补 `__all__` 与 re-export |
+| 验收 | `python -m compileall kagent/` 通过 `python -c "from kagent import SimpleAgent, ReActAgent, AgentLLM, Config, Message, KagentError, LLMError, AgentError, ToolError, ConfigError; print('OK')"` 输出 `OK` `python -c "import kagent.memory; import kagent.context"` 占位包可导入 |
+| 测试 | `pytest -q tests/integration/test_framework_import.py`（C8 创建） |
 
 
-### C2：Config 类 + 异常体系
-
-| 维度 | 内容 |
-|------|------|
-| 目标 | 实现 Pydantic Config + 结构化异常 |
-| 文件 | `kagent/core/config.py` `kagent/core/exceptions.py` |
-| 类/函数 | `Config(BaseModel)` — 所有配置项 + `from_env()` `KagentError(Exception)`, `AgentError`, `LLMError`, `ToolError`, `ConfigError` |
-| 验收 | `Config.from_env()` 自动读取环境变量 `LLMError("msg")` / `AgentError("msg")` 继承自 `KagentError` |
-| 测试 | `pytest -q tests/unit/test_config.py` |
-
-
-### C3：Agent 基类框架化（注入 Config + custom_prompt）
+### C2：异常体系升级为双字段 user_message / debug_message
 
 | 维度 | 内容 |
 |------|------|
-| 目标 | B1 的 Agent 基类已在 `kagent/core/agent.py`，本任务不移动文件——只给已有 Agent 基类注入：`Config` 参数、`custom_prompt` 模板变量、`run_id` 属性 |
+| 目标 | 把 A 阶段引入的单字段 `KagentError(message)` 升级为双字段 `KagentError(user_message, debug_message=None)`，**保持向后兼容**（老代码 `LLMError("foo")` 自动落入 `user_message="foo"`），并迁移所有现存 raise 处使用合适字段 |
+| 文件 | `kagent/core/exceptions.py`（升级 `__init__`） 全 repo 各 raise 处（按需补 `debug_message`） |
+| 依赖 | A3 (已有 ConfigError), A6 (已有 LLMError), B3 |
+| 类/函数 | `KagentError.__init__(self, user_message: str, debug_message: str | None = None)` `__str__` 默认返回 user_message `AgentError` / `LLMError` / `ToolError` / `ConfigError` 全部继承不重写 |
+| 验收 | `LLMError("旧式")` 仍然合法，`.user_message == "旧式"`, `.debug_message is None` `LLMError(user_message="LLM 调用失败", debug_message="HTTP 503: ...")` 双字段都可访问 `KagentError.__str__` 返回 user_message（不暴露 debug_message） A 阶段已有的所有测试（`tests/unit/test_*.py`）继续全部通过（向后兼容验证） |
+| 测试 | `pytest -q tests/unit/test_exceptions.py` + 全量回归 `pytest -q` |
+
+
+### C3：Agent 基类框架化（注入 custom_prompt + run_id）
+
+| 维度 | 内容 |
+|------|------|
+| 目标 | B1 的 Agent 基类已在 `kagent/core/agent.py`，本任务**不移动文件、不动 history 逻辑**——只给已有 Agent 基类注入：`custom_prompt` 模板变量、`run_id` 属性 |
 | 文件 | `kagent/core/agent.py`（修改） |
-| 类/函数 | `Agent.__init__` 增加 `config: Config | None = None` + `custom_prompt: str | None = None`；新增 `run_id` 属性（`uuid.uuid4().hex[:8]`），每次 `run()` 调用生成新 ID |
-| 验收 | `agent = SimpleAgent(name="test", llm=mock_llm, config=Config.from_env(), custom_prompt="{tools}\n{input}")` 创建成功 `agent.run_id` 每次调用不同 |
-| 测试 | `pytest -q tests/unit/test_agent.py -k "test_agent_config or test_custom_prompt"` |
+| 依赖 | B1, A3 (Config, B1 已用) |
+| 类/函数 | `Agent.__init__` 增加 `custom_prompt: str | None = None` 字段；新增 `run_id` 属性 — `uuid.uuid4().hex[:8]`，**每次 `run()` 调用前由子类负责重置**（基类提供 `_new_run_id()` 工具方法） `Agent._format_prompt(template, **vars)` 工具方法：替换 `{tools}` `{history}` `{input}` `{max_steps}` 等模板变量；子类可补充自己的变量 |
+| 模板变量 | `{tools}` — `tool_registry.get_tools_description()`； `{history}` — `\n`.join(`m.to_dict()` 字符串化)； `{input}` — 当前用户输入； `{max_steps}` — config.max_steps；子类可追加（如 ReAct 的 `{thought_format}`） |
+| 验收 | `agent = SimpleAgent(name="t", llm=mock_llm, config=Config(api_key="x"), custom_prompt="{tools}\n{input}")` 创建成功 `agent.custom_prompt` 字符串中的 `{input}` 被实际 input 替换 同一 agent 多次 `run()`，每次 `agent.run_id` 不同（`_new_run_id` 在 run 起始调用） |
+| 测试 | `pytest -q tests/unit/test_agent.py -k "TestAgentCustomPrompt or TestAgentRunId"` |
 
 
 ### C4：AgentLLM 框架化（多 Provider + 自动检测）
 
 | 维度 | 内容 |
 |------|------|
-| 目标 | 升级 AgentLLM，增加 Ollama/VLLM/Zhipu Provider + `auto` 自动检测 |
-| 文件 | `kagent/core/llm.py` |
-| 类/函数 | 新增 `OllamaProvider`, `VLLMProvider`, `ZhipuProvider` `AgentLLM._auto_detect()` — 环境变量 → URL 解析 → API Key 格式 `PROVIDER_CONFIG` 字典扩充 |
-| 验收 | `LLM_PROVIDER=auto` + `LLM_BASE_URL=http://localhost:11434/v1` → 自动选择 ollama `LLM_PROVIDER=auto` + `OPENAI_API_KEY=sk-xxx` → 选择 openai |
-| 测试 | `pytest -q tests/unit/test_llm.py -k "test_auto_detect"` |
+| 目标 | 升级 AgentLLM，增加 Ollama/VLLM（OpenAI 兼容，复用 `OpenAIProvider`）已在 A5 PROVIDER_CONFIG 中映射；本任务新增 `Zhipu` 和 `ModelScope` 两个独立 Provider 子类 + `auto` 自动检测策略 |
+| 文件 | `kagent/core/llm/providers.py`（新增 `ZhipuProvider` / `ModelScopeProvider`） `kagent/core/llm/factory.py`（PROVIDER_CONFIG 扩充 + `_auto_detect()` 方法） |
+| 依赖 | A5, A6 |
+| 类/函数 | 新增 `ZhipuProvider(LLMProvider)`、`ModelScopeProvider(LLMProvider)`（如二者也走 OpenAI 兼容协议，可继承 `OpenAIProvider` 仅覆盖默认 base_url） `AgentLLM._auto_detect(config) -> str` — 启发式：① `LLM_BASE_URL` 含 `localhost:11434` → ollama；② `LLM_BASE_URL` 含 `bigmodel.cn` → zhipu；③ `LLM_BASE_URL` 含 `modelscope.cn` → modelscope；④ 否则 openai。`PROVIDER_CONFIG` 加 `zhipu` / `modelscope` 行 |
+| 验收 | `LLM_PROVIDER=auto` + `LLM_BASE_URL=http://localhost:11434/v1` → 自动选择 ollama `LLM_PROVIDER=auto` + 默认 base_url → openai 显式 `LLM_PROVIDER=zhipu` → 走 Zhipu 路径 |
+| 测试 | `pytest -q tests/unit/test_llm.py -k "TestAutoDetect or TestZhipuProvider"` |
 
 
 ### C5：ToolRegistry 框架化（双注册 + 拔除）
@@ -1411,15 +1648,16 @@ observability:
 | 测试 | `pytest -q tests/unit/test_agent.py -k "test_react_agent"` |
 
 
-### C8：pip install 验证
+### C8：pip install 验证 + 最小 README
 
 | 维度 | 内容 |
 |------|------|
-| 目标 | 创建 `pyproject.toml` 完成，`pip install -e .` 可安装 |
-| 文件 | `pyproject.toml` `README.md`（最少内容） |
-| 类/函数 | 无 |
-| 验收 | `pip install -e .` 成功 `python -c "from kagent import SimpleAgent, AgentLLM; print('OK')"` 输出 OK |
-| 测试 | 手动执行验证命令 |
+| 目标 | 在干净环境下 `pip install -e ".[dev]"` 可安装；`from kagent import ...` 全量 import 可用；README 提供最小可读说明 |
+| 文件 | `pyproject.toml`（确保 `build-backend = "setuptools.build_meta"`） `README.md`（最少：项目定位 / pip install / 一段 quickstart 代码 / v0.1 范围说明 / 链接到 DEV_SPEC.md） `tests/integration/test_framework_import.py` `tests/integration/test_pip_install.py` |
+| 依赖 | C1, C2, C3 |
+| 类/函数 | `test_all_exports` — 验证 `from kagent import SimpleAgent, ReActAgent, AgentLLM, Config, Message, KagentError, LLMError, AgentError, ToolError, ConfigError` 全部可用 `test_editable_install` — `subprocess.run(["pip", "install", "-e", "."])` 成功（CI 中可 mark external 跳过） |
+| 验收 | 干净 venv 下 `pip install -e ".[dev]"` 成功（不依赖现有 .venv 已编译产物） `python -c "from kagent import SimpleAgent, AgentLLM, Config; print('OK')"` 输出 `OK` `pytest -q` 全量通过 README 含 quickstart：`from kagent import SimpleAgent, AgentLLM, Config; ...`（10 行内可跑） |
+| 测试 | `pytest -q tests/integration/test_framework_import.py tests/integration/test_pip_install.py` |
 
 
 ### C9：FunctionCallAgent 框架化
@@ -1438,10 +1676,11 @@ observability:
 | 维度 | 内容 |
 |------|------|
 | 目标 | 实现 Span 数据类和 Tracer 单例 |
-| 文件 | `kagent/core/tracing.py` |
-| 类/函数 | `SpanStatus(str, Enum)` — OK / ERROR `SpanType(str, Enum)` — AGENT_RUN / AGENT_STEP / LLM_CALL / TOOL_CALL `Span` (dataclass) — 所有字段见 3.4 `Tracer` (单例) — `start_trace()` / `start_span()` / `end_span()` / `span()` context manager / `add_event()` / `get_current_trace()` / `get_all_traces()` / `clear()` |
-| 验收 | `start_trace → start_span → end_span → end_span` 生成正确 parent/children 树 context manager 自动处理异常 duration_ms 自动计算 |
-| 测试 | `pytest -q tests/unit/test_tracing.py -k "test_tracer"` |
+| 文件 | `kagent/core/tracing/models.py`（`Span` / `SpanType` / `SpanStatus`）+ `kagent/core/tracing/tracer.py`（`Tracer`）+ `kagent/core/tracing/__init__.py`（导出） |
+| 依赖 | C2 (KagentError 双字段) |
+| 类/函数 | `SpanStatus(str, Enum)` — OK / ERROR `SpanType(str, Enum)` — AGENT_RUN / AGENT_STEP / LLM_CALL / TOOL_CALL `Span` (dataclass) — 所有字段见 3.4 `Tracer` (单例 + `contextvars` 并发隔离) — `start_trace()` / `start_span()` / `end_span()` / `span()` context manager / `add_event()` / `get_current_trace()` / `get_all_traces()` / `clear()` |
+| 验收 | `start_trace → start_span → end_span → end_span` 生成正确 parent/children 树 context manager 自动处理异常并记 `status=ERROR` `duration_ms` 自动计算 多线程/async 场景下不串 trace（contextvars） |
+| 测试 | `pytest -q tests/unit/test_tracing.py -k "TestTracer"` |
 
 
 ### D2：TraceExporter
@@ -1449,10 +1688,11 @@ observability:
 | 维度 | 内容 |
 |------|------|
 | 目标 | 实现 Trace 树的导出（dict / JSON / 终端树形图） |
-| 文件 | `kagent/core/tracing.py` |
-| 类/函数 | `TraceExporter.to_dict(span) -> dict` — 递归 `TraceExporter.to_json(span, indent) -> str` `TraceExporter.to_tree(span, indent) -> str` — 彩色树形输出 |
-| 验收 | `to_dict` 包含所有字段且 children 递归 `to_json` 可解析回 dict `to_tree` 输出包含 span name + duration_ms |
-| 测试 | `pytest -q tests/unit/test_tracing.py -k "test_exporter"` |
+| 文件 | `kagent/core/tracing/exporter.py`（`TraceExporter`）+ `kagent/core/tracing/__init__.py`（导出） |
+| 依赖 | D1 |
+| 类/函数 | `TraceExporter.to_dict(span) -> dict` — 递归 `TraceExporter.to_json(span, indent) -> str` `TraceExporter.to_tree(span, indent) -> str` — 终端树形输出 |
+| 验收 | `to_dict` 包含所有字段且 children 递归 `to_json` 可解析回 dict 顶层含 `total_tokens` / `total_duration_ms` 汇总 `to_tree` 输出包含 span name + duration_ms |
+| 测试 | `pytest -q tests/unit/test_tracing.py -k "TestExporter"` |
 
 
 ### D3：Agent 埋点集成
@@ -1499,14 +1739,15 @@ observability:
 | 测试 | `pytest -q tests/integration/test_mcp.py` |
 
 
-### D7：容错机制（try/except + 幂等 + 用户可见错误）
+### D7：容错机制（v0.1 之上的增量加固）
 
 | 维度 | 内容 |
 |------|------|
-| 目标 | 为框架所有关键路径建立统一的错误处理、幂等保护和用户可见错误信息 |
-| 文件 | `kagent/tools/registry.py` `kagent/tools/mcp_tool.py` `kagent/agents/react_agent.py` `kagent/agents/function_call_agent.py` |
-| 类/函数 | `ToolRegistry.execute_tool()` — try/except 包裹，工具执行异常返回 `ToolResult(success=False, content="[ERROR] 工具 '{name}' 执行失败: {message}")` 而非抛异常 `MCPTool.call_tool()` — 子进程断开时自动重连（最多 3 次），超时 30s 后返回用户可读错误 `ReActAgent.run()` — 解析失败时在 history 中注入 `"Observation: 格式错误，请严格遵循 Thought/Action 格式，重新尝试"` `FunctionCallAgent._invoke_with_tools()` — API 超时/限流时指数退避重试（1s→2s→4s），最多 3 次 幂等保证：`SearchTool.run()` 同一 query + 同一时间窗口（5s）返回缓存结果 所有 `KagentError` 子类携带 `user_message` 属性（给用户看）和 `debug_message`（给开发者看） |
-| 验收 | 工具执行抛出 `ValueError` → Agent 收到 `ToolResult(success=False)`，不中断循环 MCP Server 进程被 kill → MCPTool 自动重连，Agent 无感知 LLM API 返回 429 → 自动退避重试，3 次均失败后抛 `LLMError` 含 user_message 同一查询 5s 内重复搜索 → 返回缓存，不发起 HTTP 请求 |
+| 目标 | 把 §3.7 中标 "v0.3 起 (D7)" 的约束逐项落地：LLM 重试（L3）、ToolRegistry 加锁（T5）、SearchTool 缓存（I1）、MCP 重连。是 v0.1/v0.2 fail-fast 行为之上的增量加固，**不重复定义已在 v0.1 实现的工具异常处理（T3）**。 |
+| 文件 | `kagent/tools/registry.py`（加 `threading.Lock`）`kagent/tools/mcp_tool.py`（重连）`kagent/agents/react_agent.py`（注入解析错误 Observation） `kagent/agents/function_call_agent.py`（API 重试） `kagent/tools/builtin/search.py`（5s 缓存） |
+| 依赖 | C2 (KagentError 双字段), D1-D3 (Tracer 埋点 retry 事件) |
+| 类/函数 | `ToolRegistry`：注册/注销加锁（T5）；`MCPTool.call_tool()`：子进程断开时自动重连（最多 3 次），超时 30s；`ReActAgent.run()`：解析失败注入 `"Observation: 格式错误..."`（A2 已在 v0.1）→ 这里只补 Trace 上的 `add_event("error", ...)`；`FunctionCallAgent._invoke_with_tools()`：超时/429 → 指数退避重试 1s→2s→4s 最多 3 次（L3）；`SearchTool.run()`：同 query 5s 内走 LRU 缓存（I1）。 |
+| 验收 | MCP Server 进程被 kill → MCPTool 自动重连，Agent 无感知 LLM API 返回 429 → 退避重试，3 次均失败抛 `LLMError(user_message=...)` 含中文消息 同一 query 5s 内重复 search → 第二次从缓存返回，HTTP 调用次数 = 1 工具执行抛 `ValueError`（v0.1 已经做过的）→ Agent 收到 `ToolResult(success=False)` 不中断循环（不重复测，仅作回归断言） |
 | 测试 | `pytest -q tests/unit/test_fault_tolerance.py` |
 
 
@@ -1515,7 +1756,8 @@ observability:
 | 维度 | 内容 |
 |------|------|
 | 目标 | 为每次 Agent 运行建立结构化日志（含 trace_id）、统计 Token 消耗 |
-| 文件 | `kagent/core/tracing.py` `kagent/core/llm.py` `kagent/core/agent.py` |
+| 文件 | `kagent/core/tracing/tracer.py` `kagent/core/tracing/exporter.py` `kagent/core/llm/factory.py` `kagent/core/agent.py` |
+| 依赖 | D1, D3, C3 |
 | 类/函数 | `Span.metadata` 新增 `token_usage` 字段 — `{"prompt": int, "completion": int, "total": int}` `AgentLLM.invoke()` / `AgentLLM.stream()` — 从 Provider response 提取 token usage → 自动写入当前 Span `Tracer.add_event()` 增强 — 记录关键事件：`"llm.start"` / `"llm.end"` / `"tool.start"` / `"tool.end"` / `"error"` / `"retry"` `TraceExporter.to_json()` 增加汇总统计 — `"total_tokens": {"prompt": ..., "completion": ...}` / `"total_duration_ms": ...` / `"tool_call_count": ...` `Agent` 基类增加 `run_id` 属性 — `uuid.uuid4().hex[:8]`，每次 `run()` 调用生成新 ID，注入 Tracer |
 | 验收 | 跑一次 Agent → `TraceExporter.to_json(trace)` 顶层包含 `total_tokens` 汇总 `llm.call` Span 的 metadata 包含 `token_usage: {prompt: N, completion: N, total: N}` 终端树形图每行末尾显示耗时 + Token 数 `run_id` 贯穿所有 Span，日志中可 grep 定位 |
 | 测试 | `pytest -q tests/unit/test_tracing.py -k "test_token_stats"` |
@@ -1543,7 +1785,7 @@ observability:
 | 测试 | `pytest -q tests/unit/test_memory.py` |
 
 
-### E2.5：SemanticMemory（v0.3 可选）
+### E2.5：SemanticMemory（v0.4 可选）
 
 | 维度 | 内容 |
 |------|------|

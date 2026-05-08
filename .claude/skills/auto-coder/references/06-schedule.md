@@ -43,7 +43,7 @@
 
 | 编号 | 任务 | 状态 | 完成日期 | 备注 |
 |------|------|------|---------|------|
-| B1 | Agent 基类 + Message 系统 | [ ] | | |
+| B1 | Agent 基类 + Message 系统 | [x] | 2026-05-07 | |
 | B2 | SimpleAgent | [ ] | | |
 | B3 | ReActAgent | [ ] | | |
 | B4 | PlanAndSolveAgent | [ ] | | v0.2+ |
