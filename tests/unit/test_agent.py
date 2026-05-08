@@ -483,3 +483,94 @@ class TestReActAgent:
         assert len(history) >= 2
         assert history[0].role == "user"
         assert history[0].content == "hello"
+
+
+# --- C3: Agent base framework tests ---
+
+class TestAgentCustomPrompt:
+    """Test custom_prompt template variable injection"""
+
+    def test_custom_prompt_stored(self):
+        llm = _make_llm()
+        agent = RealSimpleAgent(
+            name="test", llm=llm,
+            config=Config(api_key="x"),
+            custom_prompt="{tools}\n{input}",
+        )
+        assert agent.custom_prompt == "{tools}\n{input}"
+
+    def test_format_prompt_replaces_input(self):
+        llm = _make_llm()
+        agent = RealSimpleAgent(
+            name="test", llm=llm,
+            config=Config(api_key="x"),
+            custom_prompt="User said: {input}",
+        )
+        result = agent._format_prompt(agent.custom_prompt, input="hello world")
+        assert "hello world" in result
+
+    def test_format_prompt_replaces_tools(self):
+        registry = ToolRegistry()
+        registry.register_tool(CalculatorTool())
+        llm = _make_llm()
+        agent = RealSimpleAgent(
+            name="test", llm=llm,
+            config=Config(api_key="x"),
+            custom_prompt="Tools:\n{tools}",
+            tool_registry=registry,
+        )
+        result = agent._format_prompt(agent.custom_prompt, input="test")
+        assert "calculator" in result
+
+    def test_format_prompt_replaces_history(self):
+        llm = _make_llm()
+        agent = RealSimpleAgent(
+            name="test", llm=llm,
+            config=Config(api_key="x"),
+            custom_prompt="History:\n{history}",
+        )
+        agent.add_message(Message(content="prev msg", role="user"))
+        result = agent._format_prompt(agent.custom_prompt, input="test")
+        assert "prev msg" in result
+
+    def test_format_prompt_replaces_max_steps(self):
+        llm = _make_llm()
+        agent = RealSimpleAgent(
+            name="test", llm=llm,
+            config=Config(api_key="x", max_steps=7),
+            custom_prompt="Steps: {max_steps}",
+        )
+        result = agent._format_prompt(agent.custom_prompt, input="test")
+        assert "7" in result
+
+
+class TestAgentRunId:
+    """Test run_id generation on each run()"""
+
+    def test_run_id_set_after_run(self):
+        llm = _make_llm("ok")
+        agent = RealSimpleAgent(name="test", llm=llm)
+        agent.run("hi")
+        assert len(agent.run_id) == 8
+
+    def test_run_id_changes_each_run(self):
+        llm = _make_llm("ok")
+        agent = RealSimpleAgent(name="test", llm=llm)
+        agent.run("first")
+        first_id = agent.run_id
+        agent.run("second")
+        second_id = agent.run_id
+        assert first_id != second_id
+
+    def test_run_id_react_agent(self):
+        llm = _make_sequential_llm(["Thought: ok\nAction: Finish[answer]"])
+        agent = ReActAgent(name="test", llm=llm)
+        agent.run("hi")
+        assert len(agent.run_id) == 8
+
+    def test_new_run_id_returns_hex(self):
+        llm = _make_llm()
+        agent = RealSimpleAgent(name="test", llm=llm)
+        rid = agent._new_run_id()
+        assert len(rid) == 8
+        int(rid, 16)  # should not raise — valid hex

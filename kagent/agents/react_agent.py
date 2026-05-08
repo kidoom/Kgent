@@ -62,8 +62,9 @@ class ReActAgent(Agent):
         system_prompt: Optional[str] = None,
         config: Optional[Config] = None,
         tool_registry: Optional[ToolRegistry] = None,
+        custom_prompt: Optional[str] = None,
     ):
-        super().__init__(name=name, llm=llm, system_prompt=system_prompt, config=config)
+        super().__init__(name=name, llm=llm, system_prompt=system_prompt, config=config, custom_prompt=custom_prompt)
         self.tool_registry = tool_registry
 
     # ── Public API ──────────────────────────────────────────────
@@ -79,6 +80,7 @@ class ReActAgent(Agent):
             Final answer string.
         """
         max_steps = max_steps if max_steps is not None else self.config.max_steps
+        self._new_run_id()
 
         self.add_message(Message(content=input_text, role="user"))
 
