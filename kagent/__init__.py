@@ -17,7 +17,7 @@ from .core import (
 )
 from .core.exceptions import AgentError, KagentError, LLMError, ToolError
 from .tools import Tool, ToolParameter, ToolRegistry, ToolResult
-from .agents import SimpleAgent, ReActAgent, PlanAndSolveAgent, ReflectionAgent
+from .agents import SimpleAgent, ReActAgent, PlanAndSolveAgent, ReflectionAgent, FunctionCallAgent
 
 __all__ = [
     "Agent",
@@ -25,6 +25,7 @@ __all__ = [
     "AgentLLM",
     "Config",
     "ConfigError",
+    "FunctionCallAgent",
     "KagentError",
     "LLMChunk",
     "LLMError",

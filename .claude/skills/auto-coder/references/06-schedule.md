@@ -48,7 +48,7 @@
 | B3 | ReActAgent | [x] | 2026-05-07 | Thought→Action→Observation 循环，`Action: Finish[answer]` 终止 |
 | B4 | PlanAndSolveAgent | [x] | 2026-05-08 | Plan→Execute 两阶段；ast.literal_eval 解析计划；AgentError 处理 |
 | B5 | ReflectionAgent | [x] | 2026-05-08 | Execute→Reflect→Refine 迭代；"无需改进"提前终止；max_steps 硬上限 |
-| B6 | FunctionCallAgent | [ ] | | v0.2+ |
+| B6 | FunctionCallAgent | [~] | | v0.2+；代码已写，测试待补 |
 
 #### 阶段 C — 框架化加固
 
