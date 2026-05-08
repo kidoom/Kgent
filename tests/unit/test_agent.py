@@ -11,6 +11,7 @@ from kagent.core.llm import LLMProvider, LLMProviderRegistry, AgentLLM, LLMRespo
 from kagent.agents.simple_agent import SimpleAgent as RealSimpleAgent
 from kagent.agents.react_agent import ReActAgent
 from kagent.agents.plan_solve_agent import PlanAndSolveAgent
+from kagent.agents.reflection_agent import ReflectionAgent
 from kagent.core.exceptions import AgentError
 from kagent.tools.registry import ToolRegistry
 from kagent.tools.builtin.calculator import CalculatorTool
@@ -628,6 +629,60 @@ class TestPlanAndSolveAgent:
         """run() adds user and assistant messages to history."""
         llm = _make_sequential_llm(['["Step 1"]', "result"], "ps2")
         agent = PlanAndSolveAgent(name="test", llm=llm)
+        agent.run("question")
+        history = agent.get_history()
+        assert len(history) == 2
+        assert history[0].role == "user"
+        assert history[1].role == "assistant"
+
+
+class TestReflectionAgent:
+    """Test ReflectionAgent — B5"""
+
+    def test_reflection_converges(self):
+        """Reflection returns '无需改进' → stops after 1 iteration."""
+        llm = _make_sequential_llm([
+            "Initial answer: 42",   # initial
+            "无需改进",              # reflect → converged
+        ])
+        agent = ReflectionAgent(name="test", llm=llm)
+        result = agent.run("What is the answer?")
+        assert "42" in result
+
+    def test_reflection_refines_once(self):
+        """One reflection cycle: initial → reflect → refine → reflect converged."""
+        llm = _make_sequential_llm([
+            "Short answer",           # initial
+            "Needs more detail",      # reflect
+            "Detailed answer here",   # refine
+            "无需改进",               # reflect → converged
+        ])
+        agent = ReflectionAgent(name="test", llm=llm)
+        result = agent.run("Explain AI")
+        assert result == "Detailed answer here"
+
+    def test_reflection_max_steps(self):
+        """Reflection never converges → stops at max_steps."""
+        llm = _make_sequential_llm([
+            "Answer v1",        # initial
+            "Improve X",        # reflect 1
+            "Answer v2",        # refine 1
+            "Improve Y",        # reflect 2
+            "Answer v3",        # refine 2
+        ])
+        agent = ReflectionAgent(name="test", llm=llm, config=Config(api_key="sk-test", max_steps=2))
+        result = agent.run("question")
+        assert result == "Answer v3"
+
+    def test_run_id_set(self):
+        llm = _make_sequential_llm(["answer", "无需改进"], "ref")
+        agent = ReflectionAgent(name="test", llm=llm)
+        agent.run("hi")
+        assert len(agent.run_id) == 8
+
+    def test_history_recorded(self):
+        llm = _make_sequential_llm(["answer", "无需改进"], "ref2")
+        agent = ReflectionAgent(name="test", llm=llm)
         agent.run("question")
         history = agent.get_history()
         assert len(history) == 2
