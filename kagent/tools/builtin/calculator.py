@@ -36,8 +36,12 @@ class CalculatorTool(Tool):
         "min": min,
         "max": max,
         "pow": pow,
-        "pi": lambda: math.pi,
-        "e": lambda: math.e,
+    }
+
+    # Allowed named constants
+    _constants: dict[str, float] = {
+        "pi": math.pi,
+        "e": math.e,
     }
 
     def __init__(self):
@@ -121,8 +125,8 @@ class CalculatorTool(Tool):
         # Handle named constants: pi -> math.pi, e -> math.e
         if isinstance(node, ast.Name):
             name = node.id
-            if name not in self._functions:
+            if name not in self._constants:
                 raise ValueError(f"不支持的变量: {name}")
-            return self._functions[name]()
+            return self._constants[name]
 
         raise ValueError(f"不支持的语法: {type(node).__name__}")

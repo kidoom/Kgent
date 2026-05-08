@@ -320,10 +320,15 @@ class TestCalculatorTool:
         assert result.success is True
         assert result.content == "16.0"
 
-    def test_pi_call(self):
-        result = self.calc.run({"expression": "pi()"})
+    def test_pi_constant(self):
+        result = self.calc.run({"expression": "pi"})
         assert result.success is True
         assert "3.14" in result.content
+
+    def test_pi_call_is_invalid(self):
+        result = self.calc.run({"expression": "pi()"})
+        assert result.success is False
+        assert "不支持的函数: pi" in result.content
 
     def test_division_by_zero(self):
         result = self.calc.run({"expression": "1/0"})

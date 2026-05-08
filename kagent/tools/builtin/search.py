@@ -13,7 +13,7 @@ class SearchTool(Tool):
             name="search",
             description="搜索互联网获取实时信息",
         )
-        self._backend = os.getenv("SEARCH_BACKEND", "serpapi").lower()
+        self._backend = os.getenv("SEARCH_BACKEND", "tavily").lower()
 
     def run(self, parameters: dict) -> ToolResult:
         query = parameters.get("query", "").strip()
