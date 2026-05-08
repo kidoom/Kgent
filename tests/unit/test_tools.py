@@ -289,6 +289,51 @@ class TestToolLifecycle:
         assert registry.is_enabled("mock_tool") is True
 
 
+class TestRegistryFramework:
+    """Test ToolRegistry dual registration (Tool objects + bare functions) — C5"""
+
+    def test_dual_registration_description(self):
+        """Both Tool objects and bare functions appear in get_tools_description()."""
+        registry = ToolRegistry()
+        registry.register_tool(MockTool())
+        registry.register_function("greet", "Say hello", lambda args: "hi")
+        desc = registry.get_tools_description()
+        assert "mock_tool" in desc
+        assert "greet" in desc
+
+    def test_unregister_removes_from_both_sources(self):
+        """unregister() removes Tool objects and bare functions."""
+        registry = ToolRegistry()
+        registry.register_tool(MockTool())
+        registry.register_function("greet", "Say hello", lambda args: "hi")
+
+        registry.unregister("mock_tool")
+        assert "mock_tool" not in registry.get_tools_description()
+
+        registry.unregister("greet")
+        assert "greet" not in registry.get_tools_description()
+
+    def test_unregister_then_execute_returns_error(self):
+        """After unregister, execute_tool returns not-found error."""
+        registry = ToolRegistry()
+        registry.register_function("greet", "Say hello", lambda args: "hi")
+        registry.unregister("greet")
+        result = registry.execute_tool("greet", {})
+        assert result.success is False
+        assert "未注册" in result.content
+
+    def test_list_tools_merges_both_sources(self):
+        """list_tools() includes both Tool objects and bare functions."""
+        registry = ToolRegistry()
+        registry.register_tool(MockTool())
+        registry.register_function("greet", "Say hello", lambda args: "hi")
+        tools = registry.list_tools()
+        assert "mock_tool" in tools
+        assert tools["mock_tool"]["type"] == "tool"
+        assert "greet" in tools
+        assert tools["greet"]["type"] == "function"
+
+
 class TestCalculatorTool:
     """Test CalculatorTool"""
 

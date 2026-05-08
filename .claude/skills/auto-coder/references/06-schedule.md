@@ -58,7 +58,7 @@
 | C2 | Config 类 + 异常体系 | [x] | 2026-05-07 | KagentError 升级双字段 user_message/debug_message，向后兼容 |
 | C3 | Agent 基类框架化 | [x] | 2026-05-07 | 注入 custom_prompt 模板变量 + run_id + _format_prompt |
 | C4 | AgentLLM 框架化（多 Provider） | [x] | 2026-05-08 | ZhipuProvider + ModelScopeProvider + auto-detect；PROVIDER_CONFIG 扩充至 5 个 provider |
-| C5 | ToolRegistry 框架化（双注册 + 裸函数拔除） | [ ] | | v0.2：不含加锁；加锁归 D7 |
+| C5 | ToolRegistry 框架化（双注册 + 裸函数拔除） | [x] | 2026-05-08 | v0.1 已实现双注册；补充 TestRegistryFramework 验收测试 |
 | C6 | SimpleAgent 框架化 | [ ] | | |
 | C7 | ReActAgent 框架化 | [ ] | | |
 | C8 | pip install 验证 | [x] | 2026-05-07 | README + framework import tests + pip install tests (external) |
