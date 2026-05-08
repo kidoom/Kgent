@@ -416,9 +416,10 @@ class TestOpenAIProvider:
 
         with patch("openai.OpenAI", return_value=mock_client):
             provider = self.provider()
-            with pytest.raises(LLMError, match="Connection timeout"):
+            with pytest.raises(LLMError) as exc_info:
                 provider.chat(
                     messages=[{"role": "user", "content": "hi"}],
                     model="gpt-4o",
                     temperature=0.0,
                 )
+            assert "Connection timeout" in exc_info.value.debug_message

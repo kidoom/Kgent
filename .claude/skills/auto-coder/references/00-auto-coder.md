@@ -9,7 +9,7 @@
 v0.1 Kagent Core MVP — 进行中
   阶段 A [████████] 8/8  ✅ 工程骨架 + LLM 可插拔 + 工具可插拔
   阶段 B [████████] 3/3  ✅ Agent 范式（B1 + B2 + B3 全部完成）
-  阶段 C [········] 0/4  ⬜ 框架化加固（仅 C1-C3 + C8 在 MVP 内）
+  阶段 C [████····] 2/4  🟡 框架化加固（C1 + C2 已完成；C3 / C8 未开始）
 v0.2+ — 未启动
   v0.2 Kagent Core 增强（C4-C7 + C9：多 Provider / 5 范式齐备）
   v0.3 Kagent Observability（D：Tracer + MCP + 容错 + 监控）

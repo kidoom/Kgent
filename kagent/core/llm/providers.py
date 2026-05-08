@@ -69,7 +69,10 @@ class OpenAIProvider(LLMProvider):
         except Exception as e:
             if isinstance(e, LLMError):
                 raise
-            raise LLMError(str(e)) from e
+            raise LLMError(
+                user_message="LLM 调用失败，请检查 API Key 和网络连接",
+                debug_message=f"{type(e).__name__}: {e}",
+            ) from e
 
     def chat_stream(
         self,
@@ -107,4 +110,7 @@ class OpenAIProvider(LLMProvider):
         except Exception as e:
             if isinstance(e, LLMError):
                 raise
-            raise LLMError(str(e)) from e
+            raise LLMError(
+                user_message="LLM 流式调用失败，请检查 API Key 和网络连接",
+                debug_message=f"{type(e).__name__}: {e}",
+            ) from e

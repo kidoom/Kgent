@@ -17,6 +17,7 @@ from .core import (
 )
 from .core.exceptions import AgentError, KagentError, LLMError, ToolError
 from .tools import Tool, ToolParameter, ToolRegistry, ToolResult
+from .agents import SimpleAgent, ReActAgent
 
 __all__ = [
     "Agent",
@@ -32,6 +33,8 @@ __all__ = [
     "LLMResponse",
     "Message",
     "OpenAIProvider",
+    "ReActAgent",
+    "SimpleAgent",
     "Tool",
     "ToolError",
     "ToolParameter",

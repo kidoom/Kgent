@@ -75,8 +75,9 @@ class Config(BaseModel):
         if self.default_provider not in providers_without_api_key:
             if not self.api_key:
                 raise ConfigError(
-                    f"LLM_API_KEY is required for provider '{self.default_provider}'. "
-                    f"Set it in .env file or environment variable."
+                    user_message=f"LLM_API_KEY is required for provider '{self.default_provider}'. "
+                    f"Set it in .env file or environment variable.",
+                    debug_message=f"provider={self.default_provider}, api_key={'<set>' if self.api_key else '<empty>'}",
                 )
 
 

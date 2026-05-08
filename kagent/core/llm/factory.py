@@ -68,20 +68,23 @@ class AgentLLM:
             cfg = PROVIDER_CONFIG.get(self.provider_name)
             if not cfg:
                 raise ConfigError(
-                    f"LLM provider '{self.provider_name}' is not registered and has no "
-                    f"known lazy-load config. Available providers: {self._registry.list_providers()}."
+                    user_message=f"LLM provider '{self.provider_name}' is not registered and has no "
+                    f"known lazy-load config. Available providers: {self._registry.list_providers()}.",
+                    debug_message=f"provider={self.provider_name}, PROVIDER_CONFIG keys={list(PROVIDER_CONFIG.keys())}",
                 )
 
             if cfg.get("requires_api_key", True) and not self.api_key:
                 raise ConfigError(
-                    f"LLM_API_KEY is required for provider '{self.provider_name}'."
+                    user_message=f"LLM_API_KEY is required for provider '{self.provider_name}'.",
+                    debug_message=f"provider={self.provider_name}, requires_api_key=True, api_key=<empty>",
                 )
 
             class_path = cfg.get("class")
             if not class_path:
                 raise ConfigError(
-                    f"Provider '{self.provider_name}' is not registered and has invalid "
-                    "PROVIDER_CONFIG (missing 'class')."
+                    user_message=f"Provider '{self.provider_name}' is not registered and has invalid "
+                    "PROVIDER_CONFIG (missing 'class').",
+                    debug_message=f"provider={self.provider_name}, config={cfg}",
                 )
 
             try:
@@ -90,8 +93,9 @@ class AgentLLM:
                 provider_cls = getattr(module, class_name)
             except (ValueError, ImportError, AttributeError) as e:
                 raise ConfigError(
-                    f"Failed to lazy-load provider '{self.provider_name}' from "
-                    f"'{class_path}': {e}"
+                    user_message=f"Failed to lazy-load provider '{self.provider_name}' from "
+                    f"'{class_path}': {e}",
+                    debug_message=f"provider={self.provider_name}, class_path={class_path}, error={type(e).__name__}: {e}",
                 ) from e
 
             provider = provider_cls(

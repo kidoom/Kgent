@@ -18,7 +18,7 @@
 v0.1 Kagent Core MVP — 进行中
   阶段 A [████████] 8/8  ✅ 工程骨架 + LLM 可插拔 + 工具可插拔
   阶段 B [████████] 3/3  ✅ Agent 范式（B1 + B2 + B3 全部完成）
-  阶段 C [········] 0/4  ⬜ 框架化加固（仅 C1-C3 + C8 在 MVP 内）
+  阶段 C [████····] 2/4  🟡 框架化加固（C1 + C2 已完成；C3 / C8 未开始）
 v0.2+ — 未启动
   v0.2 Kagent Core 增强（C4-C7 + C9：多 Provider / 5 范式齐备）
   v0.3 Kagent Observability（D：Tracer + MCP + 容错 + 监控）
@@ -1351,8 +1351,8 @@ observability:
 
 | 编号 | 任务 | 状态 | 完成日期 | 备注 |
 |------|------|------|---------|------|
-| C1 | 框架目录骨架 | [ ] | | |
-| C2 | Config 类 + 异常体系 | [ ] | | |
+| C1 | 框架目录骨架 | [x] | 2026-05-07 | 补充 kagent/__init__.py 导出 SimpleAgent/ReActAgent，全量 import 验证 |
+| C2 | Config 类 + 异常体系 | [x] | 2026-05-07 | KagentError 升级双字段 user_message/debug_message，向后兼容 |
 | C3 | Agent 基类框架化 | [ ] | | |
 | C4 | AgentLLM 框架化（多 Provider） | [ ] | | |
 | C5 | ToolRegistry 框架化（双注册 + 裸函数拔除） | [ ] | | v0.2：不含加锁；加锁归 D7 |
