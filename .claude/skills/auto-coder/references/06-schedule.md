@@ -61,7 +61,7 @@
 | C5 | ToolRegistry 框架化（双注册 + 裸函数拔除） | [ ] | | v0.2：不含加锁；加锁归 D7 |
 | C6 | SimpleAgent 框架化 | [ ] | | |
 | C7 | ReActAgent 框架化 | [ ] | | |
-| C8 | pip install 验证 | [ ] | | |
+| C8 | pip install 验证 | [x] | 2026-05-07 | README + framework import tests + pip install tests (external) |
 | C9 | FunctionCallAgent 框架化 | [ ] | | |
 
 #### 阶段 D — MCP 外部网关 + 链路追踪 + 容错 + 监控

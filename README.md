@@ -1,6 +1,6 @@
 # Kagent
 
-Pluggable AI Agent framework for building tool-using LLM agents.
+Pluggable AI Agent Framework — build agents with swappable LLMs and tools.
 
 ## Install
 
@@ -11,17 +11,18 @@ pip install -e ".[dev]"
 ## Quickstart
 
 ```python
-from kagent.core import AgentLLM, Config
+from kagent import SimpleAgent, AgentLLM, Config
 
-config = Config.from_env()
-llm = AgentLLM(config=config)
-
-response = llm.invoke([{"role": "user", "content": "Hello, Kagent!"}])
-print(response.content)
+llm = AgentLLM(config=Config(api_key="sk-xxx"))
+agent = SimpleAgent(name="demo", llm=llm)
+print(agent.run("Hello!"))
 ```
 
-## Current Scope
+## v0.1 Scope
 
-- Stage A complete: config, LLM provider layer, tool system, built-in tools
-- Stage B in progress: agent paradigms (`Agent`, `Message`, `SimpleAgent`, `ReActAgent`)
-- Full plan and milestones: see `DEV_SPEC.md`
+- **Agent 范式**: SimpleAgent (prompt-based tool calling), ReActAgent (Thought/Action/Observation)
+- **LLM 可插拔**: OpenAI-compatible providers, lazy-load via config
+- **工具可插拔**: ToolRegistry with Calculator + Search built-in
+- **配置驱动**: `.env` based config via `Config.from_env()`
+
+See [DEV_SPEC.md](DEV_SPEC.md) for full specification.

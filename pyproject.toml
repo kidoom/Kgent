@@ -8,9 +8,10 @@ version = "0.1.0"
 description = "Pluggable AI Agent Framework"
 requires-python = ">=3.10"
 dependencies = [
-    "pydantic>=2.0",
     "openai>=1.0",
+    "pydantic>=2.0",
     "python-dotenv>=1.0",
+    "tavily-python>=0.3",
 ]
 
 [project.optional-dependencies]
@@ -25,3 +26,6 @@ include = ["kagent*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+    "external: tests that require network or external services (deselect with '-m not external')",
+]

@@ -18,7 +18,7 @@
 v0.1 Kagent Core MVP — 进行中
   阶段 A [████████] 8/8  ✅ 工程骨架 + LLM 可插拔 + 工具可插拔
   阶段 B [████████] 3/3  ✅ Agent 范式（B1 + B2 + B3 全部完成）
-  阶段 C [██████··] 3/4  🟡 框架化加固（C1 + C2 + C3 已完成；C8 未开始）
+  阶段 C [████████] 4/4  ✅ 框架化加固（C1 + C2 + C3 + C8 全部完成）
 v0.2+ — 未启动
   v0.2 Kagent Core 增强（C4-C7 + C9：多 Provider / 5 范式齐备）
   v0.3 Kagent Observability（D：Tracer + MCP + 容错 + 监控）
@@ -1358,7 +1358,7 @@ observability:
 | C5 | ToolRegistry 框架化（双注册 + 裸函数拔除） | [ ] | | v0.2：不含加锁；加锁归 D7 |
 | C6 | SimpleAgent 框架化 | [ ] | | |
 | C7 | ReActAgent 框架化 | [ ] | | |
-| C8 | pip install 验证 | [ ] | | |
+| C8 | pip install 验证 | [x] | 2026-05-07 | README + framework import tests + pip install tests (external) |
 | C9 | FunctionCallAgent 框架化 | [ ] | | |
 
 #### 阶段 D — MCP 外部网关 + 链路追踪 + 容错 + 监控
