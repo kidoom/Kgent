@@ -3,7 +3,7 @@
 from .models import LLMResponse, LLMChunk
 from .base import LLMProvider, LLMProviderRegistry
 from .factory import AgentLLM, PROVIDER_CONFIG
-from .providers import OpenAIProvider
+from .providers import OpenAIProvider, ZhipuProvider, ModelScopeProvider
 
 __all__ = [
     "LLMResponse",
@@ -13,4 +13,6 @@ __all__ = [
     "AgentLLM",
     "PROVIDER_CONFIG",
     "OpenAIProvider",
+    "ZhipuProvider",
+    "ModelScopeProvider",
 ]

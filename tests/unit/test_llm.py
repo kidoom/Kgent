@@ -14,6 +14,8 @@ from kagent.core.llm import (
     LLMProviderRegistry,
     AgentLLM,
     OpenAIProvider,
+    ZhipuProvider,
+    ModelScopeProvider,
 )
 
 
@@ -423,3 +425,112 @@ class TestOpenAIProvider:
                     temperature=0.0,
                 )
             assert "Connection timeout" in exc_info.value.debug_message
+
+
+class TestZhipuProvider:
+    """Test ZhipuProvider is an OpenAI-compatible subclass"""
+
+    def test_is_subclass_of_openai(self):
+        assert issubclass(ZhipuProvider, OpenAIProvider)
+
+    def test_can_instantiate(self):
+        with patch("openai.OpenAI"):
+            provider = ZhipuProvider(
+                api_key="sk-test",
+                base_url="https://open.bigmodel.cn/api/paas/v4",
+            )
+            assert isinstance(provider, LLMProvider)
+
+
+class TestModelScopeProvider:
+    """Test ModelScopeProvider is an OpenAI-compatible subclass"""
+
+    def test_is_subclass_of_openai(self):
+        assert issubclass(ModelScopeProvider, OpenAIProvider)
+
+    def test_can_instantiate(self):
+        with patch("openai.OpenAI"):
+            provider = ModelScopeProvider(
+                api_key="sk-test",
+                base_url="https://api-inference.modelscope.cn/v1",
+            )
+            assert isinstance(provider, LLMProvider)
+
+
+class TestAutoDetect:
+    """Test AgentLLM._auto_detect heuristic"""
+
+    def test_no_base_url_returns_openai(self):
+        assert AgentLLM._auto_detect(None) == "openai"
+        assert AgentLLM._auto_detect("") == "openai"
+
+    def test_ollama_localhost(self):
+        assert AgentLLM._auto_detect("http://localhost:11434/v1") == "ollama"
+
+    def test_zhipu_bigmodel(self):
+        assert AgentLLM._auto_detect("https://open.bigmodel.cn/api/paas/v4") == "zhipu"
+
+    def test_modelscope(self):
+        assert AgentLLM._auto_detect("https://api-inference.modelscope.cn/v1") == "modelscope"
+
+    def test_unknown_url_defaults_openai(self):
+        assert AgentLLM._auto_detect("https://some-other-api.com/v1") == "openai"
+
+    def test_case_insensitive(self):
+        assert AgentLLM._auto_detect("HTTP://LOCALHOST:11434/v1") == "ollama"
+        assert AgentLLM._auto_detect("https://OPEN.BIGMODEL.CN/api") == "zhipu"
+
+
+class TestAutoProviderInit:
+    """Test AgentLLM with provider='auto'"""
+
+    def setup_method(self):
+        AgentLLM._registry = LLMProviderRegistry()
+
+    def _config(self, **kwargs):
+        defaults = {"api_key": "sk-test"}
+        defaults.update(kwargs)
+        return Config(**defaults)
+
+    def test_auto_with_ollama_url(self):
+        AgentLLM.register_provider("ollama", MockLLMProvider("ollama response"))
+        config = self._config(base_url="http://localhost:11434/v1")
+        llm = AgentLLM(provider="auto", config=config)
+        assert llm.provider_name == "ollama"
+
+    def test_auto_with_zhipu_url(self):
+        AgentLLM.register_provider("zhipu", MockLLMProvider("zhipu response"))
+        config = self._config(base_url="https://open.bigmodel.cn/api/paas/v4")
+        llm = AgentLLM(provider="auto", config=config)
+        assert llm.provider_name == "zhipu"
+
+    def test_auto_no_base_url_defaults_openai(self):
+        AgentLLM.register_provider("openai", MockLLMProvider("openai response"))
+        config = self._config()
+        llm = AgentLLM(provider="auto", config=config)
+        assert llm.provider_name == "openai"
+
+    def test_auto_lazy_loads_zhipu(self):
+        """Test auto-detect + lazy-load for zhipu provider."""
+        mock_msg = MagicMock()
+        mock_msg.content = "zhipu lazy"
+        mock_msg.tool_calls = None
+
+        mock_choice = MagicMock()
+        mock_choice.message = mock_msg
+
+        mock_completion = MagicMock()
+        mock_completion.choices = [mock_choice]
+        mock_completion.usage = None
+
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = mock_completion
+
+        config = self._config(
+            base_url="https://open.bigmodel.cn/api/paas/v4",
+        )
+        with patch("openai.OpenAI", return_value=mock_client):
+            llm = AgentLLM(provider="auto", config=config)
+            assert llm.provider_name == "zhipu"
+            resp = llm.invoke([{"role": "user", "content": "hi"}])
+            assert resp.content == "zhipu lazy"

@@ -25,6 +25,16 @@ PROVIDER_CONFIG: dict[str, dict] = {
         "default_base_url": "http://localhost:8000/v1",
         "requires_api_key": False,
     },
+    "zhipu": {
+        "class": "kagent.core.llm.providers.ZhipuProvider",
+        "default_base_url": "https://open.bigmodel.cn/api/paas/v4",
+        "requires_api_key": True,
+    },
+    "modelscope": {
+        "class": "kagent.core.llm.providers.ModelScopeProvider",
+        "default_base_url": "https://api-inference.modelscope.cn/v1",
+        "requires_api_key": True,
+    },
 }
 
 
@@ -55,11 +65,28 @@ class AgentLLM:
         self.base_url = base_url or cfg.base_url
         self.timeout = timeout if timeout is not None else cfg.timeout
 
+        if self.provider_name == "auto":
+            self.provider_name = self._auto_detect(self.base_url)
+
         if not self.base_url:
             pcfg = PROVIDER_CONFIG.get(self.provider_name, {})
             self.base_url = pcfg.get("default_base_url")
 
         self._provider = self._get_or_load_provider()
+
+    @staticmethod
+    def _auto_detect(base_url: Optional[str] = None) -> str:
+        """Heuristically detect provider from base_url."""
+        if not base_url:
+            return "openai"
+        url = base_url.lower()
+        if "localhost:11434" in url:
+            return "ollama"
+        if "bigmodel.cn" in url:
+            return "zhipu"
+        if "modelscope.cn" in url:
+            return "modelscope"
+        return "openai"
 
     def _get_or_load_provider(self) -> LLMProvider:
         try:

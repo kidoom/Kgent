@@ -114,3 +114,11 @@ class OpenAIProvider(LLMProvider):
                 user_message="LLM 流式调用失败，请检查 API Key 和网络连接",
                 debug_message=f"{type(e).__name__}: {e}",
             ) from e
+
+
+class ZhipuProvider(OpenAIProvider):
+    """Zhipu (智谱 BigModel) LLM provider — OpenAI-compatible"""
+
+
+class ModelScopeProvider(OpenAIProvider):
+    """ModelScope LLM provider — OpenAI-compatible"""

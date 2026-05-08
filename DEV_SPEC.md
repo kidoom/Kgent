@@ -1354,7 +1354,7 @@ observability:
 | C1 | 框架目录骨架 | [x] | 2026-05-07 | 补充 kagent/__init__.py 导出 SimpleAgent/ReActAgent，全量 import 验证 |
 | C2 | Config 类 + 异常体系 | [x] | 2026-05-07 | KagentError 升级双字段 user_message/debug_message，向后兼容 |
 | C3 | Agent 基类框架化 | [x] | 2026-05-07 | 注入 custom_prompt 模板变量 + run_id + _format_prompt |
-| C4 | AgentLLM 框架化（多 Provider） | [ ] | | |
+| C4 | AgentLLM 框架化（多 Provider） | [x] | 2026-05-08 | ZhipuProvider + ModelScopeProvider + auto-detect；PROVIDER_CONFIG 扩充至 5 个 provider |
 | C5 | ToolRegistry 框架化（双注册 + 裸函数拔除） | [ ] | | v0.2：不含加锁；加锁归 D7 |
 | C6 | SimpleAgent 框架化 | [ ] | | |
 | C7 | ReActAgent 框架化 | [ ] | | |
