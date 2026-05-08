@@ -46,7 +46,7 @@
 | B1 | Agent 基类 + Message 系统 | [x] | 2026-05-07 | 已提交：Agent ABC + Message(BaseModel) + history 基础能力 |
 | B2 | SimpleAgent | [x] | 2026-05-07 | Prompt 约束式工具调用 `[TOOL_CALL:name:params]` |
 | B3 | ReActAgent | [x] | 2026-05-07 | Thought→Action→Observation 循环，`Action: Finish[answer]` 终止 |
-| B4 | PlanAndSolveAgent | [ ] | | v0.2+ |
+| B4 | PlanAndSolveAgent | [x] | 2026-05-08 | Plan→Execute 两阶段；ast.literal_eval 解析计划；AgentError 处理 |
 | B5 | ReflectionAgent | [ ] | | v0.2+ |
 | B6 | FunctionCallAgent | [ ] | | v0.2+ |
 

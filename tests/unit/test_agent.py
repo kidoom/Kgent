@@ -10,6 +10,8 @@ from kagent.core.message import Message
 from kagent.core.llm import LLMProvider, LLMProviderRegistry, AgentLLM, LLMResponse, LLMChunk
 from kagent.agents.simple_agent import SimpleAgent as RealSimpleAgent
 from kagent.agents.react_agent import ReActAgent
+from kagent.agents.plan_solve_agent import PlanAndSolveAgent
+from kagent.core.exceptions import AgentError
 from kagent.tools.registry import ToolRegistry
 from kagent.tools.builtin.calculator import CalculatorTool
 
@@ -574,3 +576,60 @@ class TestAgentRunId:
         rid = agent._new_run_id()
         assert len(rid) == 8
         int(rid, 16)  # should not raise — valid hex
+
+
+class TestPlanAndSolveAgent:
+    """Test PlanAndSolveAgent — B4"""
+
+    def test_plan_and_execute(self):
+        """Mock LLM returns plan list → executes steps → returns final result."""
+        # First call: plan, then each step gets a response
+        llm = _make_sequential_llm([
+            '["Step 1: Analyze", "Step 2: Conclude"]',
+            "Analysis complete",
+            "Final conclusion",
+        ])
+        agent = PlanAndSolveAgent(name="test", llm=llm)
+        result = agent.run("What is 2+2?")
+        assert result == "Final conclusion"
+
+    def test_single_step_plan(self):
+        """Single-step plan works correctly."""
+        llm = _make_sequential_llm([
+            '["Step 1: Answer directly"]',
+            "The answer is 4",
+        ])
+        agent = PlanAndSolveAgent(name="test", llm=llm)
+        result = agent.run("What is 2+2?")
+        assert result == "The answer is 4"
+
+    def test_bad_plan_format_raises_agent_error(self):
+        """LLM returns non-list → raises AgentError."""
+        llm = _make_llm("This is not a valid plan")
+        agent = PlanAndSolveAgent(name="test", llm=llm)
+        with pytest.raises(AgentError, match="无法解析"):
+            agent.run("What is 2+2?")
+
+    def test_plan_with_non_string_items_raises(self):
+        """Plan with non-string items → raises AgentError."""
+        llm = _make_llm("[1, 2, 3]")
+        agent = PlanAndSolveAgent(name="test", llm=llm)
+        with pytest.raises(AgentError, match="格式错误"):
+            agent.run("What is 2+2?")
+
+    def test_run_id_set(self):
+        """run() sets a new run_id."""
+        llm = _make_sequential_llm(['["Step 1"]'], "ps")
+        agent = PlanAndSolveAgent(name="test", llm=llm)
+        agent.run("hi")
+        assert len(agent.run_id) == 8
+
+    def test_history_recorded(self):
+        """run() adds user and assistant messages to history."""
+        llm = _make_sequential_llm(['["Step 1"]', "result"], "ps2")
+        agent = PlanAndSolveAgent(name="test", llm=llm)
+        agent.run("question")
+        history = agent.get_history()
+        assert len(history) == 2
+        assert history[0].role == "user"
+        assert history[1].role == "assistant"
