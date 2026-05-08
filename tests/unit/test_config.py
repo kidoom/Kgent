@@ -103,6 +103,12 @@ class TestConfigFromEnv:
             config = Config.from_env()
             assert config.base_url == "https://api.example.com/v1"
 
+    def test_from_env_reads_timeout(self):
+        env = {"LLM_API_KEY": "sk-test", "LLM_TIMEOUT": "123"}
+        with patch.dict(os.environ, env, clear=True):
+            config = Config.from_env()
+            assert config.timeout == 123
+
     def test_from_env_malformed_temperature(self):
         """Test malformed LLM_TEMPERATURE raises ValueError"""
         env = {"LLM_TEMPERATURE": "abc", "LLM_API_KEY": "sk-test"}
@@ -172,7 +178,7 @@ class TestConfigModelDump:
         dumped = config.model_dump()
         expected_fields = [
             "default_provider", "default_model", "api_key", "base_url",
-            "temperature", "max_tokens", "debug", "log_level",
+            "timeout", "temperature", "max_tokens", "debug", "log_level",
             "max_history_length", "max_steps", "trace_enabled", "trace_export"
         ]
         for field in expected_fields:

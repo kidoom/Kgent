@@ -16,6 +16,7 @@ class Config(BaseModel):
     default_model: str = "gpt-4o"
     api_key: Optional[str] = None
     base_url: Optional[str] = None
+    timeout: int = 60
     temperature: float = 0.0
     max_tokens: Optional[int] = None
     debug: bool = False
@@ -47,6 +48,7 @@ class Config(BaseModel):
             "default_model": os.getenv("LLM_MODEL_ID", "gpt-4o"),
             "api_key": os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY"),
             "base_url": os.getenv("LLM_BASE_URL"),
+            "timeout": int(os.getenv("LLM_TIMEOUT", "60")),
             "temperature": float(os.getenv("LLM_TEMPERATURE", "0.0")),
             "max_tokens": int(os.getenv("LLM_MAX_TOKENS")) if os.getenv("LLM_MAX_TOKENS") else None,
             "debug": os.getenv("DEBUG", "false").lower() in ("true", "1", "yes"),

@@ -10,10 +10,18 @@ from .models import LLMResponse, LLMChunk
 class OpenAIProvider(LLMProvider):
     """OpenAI-compatible LLM provider"""
 
-    def __init__(self, api_key: str, base_url: str, timeout: int = 60):
+    def __init__(self, api_key: Optional[str], base_url: str, timeout: int = 60):
+        from openai import OpenAI
+
         self.api_key = api_key
         self.base_url = base_url
         self.timeout = timeout
+        # Reuse one client instance to preserve connection pooling and timeout settings.
+        self._client = OpenAI(
+            api_key=self.api_key,
+            base_url=self.base_url,
+            timeout=self.timeout,
+        )
 
     def chat(
         self,
@@ -24,9 +32,6 @@ class OpenAIProvider(LLMProvider):
         tool_choice: Optional[str | dict] = None,
     ) -> LLMResponse:
         try:
-            from openai import OpenAI
-
-            client = OpenAI(api_key=self.api_key, base_url=self.base_url)
             kwargs = {
                 "model": model,
                 "messages": messages,
@@ -37,7 +42,7 @@ class OpenAIProvider(LLMProvider):
             if tool_choice:
                 kwargs["tool_choice"] = tool_choice
 
-            completion = client.chat.completions.create(**kwargs)
+            completion = self._client.chat.completions.create(**kwargs)
             choice = completion.choices[0]
             msg = choice.message
 
@@ -75,9 +80,6 @@ class OpenAIProvider(LLMProvider):
         tool_choice: Optional[str | dict] = None,
     ) -> Iterator[LLMChunk]:
         try:
-            from openai import OpenAI
-
-            client = OpenAI(api_key=self.api_key, base_url=self.base_url)
             kwargs = {
                 "model": model,
                 "messages": messages,
@@ -89,7 +91,7 @@ class OpenAIProvider(LLMProvider):
             if tool_choice:
                 kwargs["tool_choice"] = tool_choice
 
-            stream = client.chat.completions.create(**kwargs)
+            stream = self._client.chat.completions.create(**kwargs)
             for chunk in stream:
                 if chunk.choices and chunk.choices[0].delta.content:
                     yield LLMChunk(

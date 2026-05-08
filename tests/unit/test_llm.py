@@ -251,6 +251,27 @@ class TestAgentLLMInit:
         llm = AgentLLM(provider="custom", config=config)
         assert llm._provider is provider
 
+    def test_init_lazy_loads_openai_provider(self):
+        """Test provider is lazy-loaded from PROVIDER_CONFIG when not pre-registered."""
+        mock_msg = MagicMock()
+        mock_msg.content = "lazy loaded"
+        mock_msg.tool_calls = None
+
+        mock_choice = MagicMock()
+        mock_choice.message = mock_msg
+
+        mock_completion = MagicMock()
+        mock_completion.choices = [mock_choice]
+        mock_completion.usage = None
+
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = mock_completion
+
+        with patch("openai.OpenAI", return_value=mock_client):
+            llm = AgentLLM(config=self._config())
+            resp = llm.invoke([{"role": "user", "content": "hello"}])
+            assert resp.content == "lazy loaded"
+
 
 class TestAgentLLMInvoke:
     """Test AgentLLM.invoke()"""
