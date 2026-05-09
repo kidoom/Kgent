@@ -12,6 +12,7 @@ from kagent.agents.simple_agent import SimpleAgent as RealSimpleAgent
 from kagent.agents.react_agent import ReActAgent
 from kagent.agents.plan_solve_agent import PlanAndSolveAgent
 from kagent.agents.reflection_agent import ReflectionAgent
+from kagent.agents.function_call_agent import FunctionCallAgent
 from kagent.core.exceptions import AgentError
 from kagent.tools.registry import ToolRegistry
 from kagent.tools.builtin.calculator import CalculatorTool
@@ -57,6 +58,29 @@ def _make_sequential_llm(responses: list[str], name: str = "seq") -> AgentLLM:
     """Create an AgentLLM that returns different responses per call."""
     AgentLLM._registry = LLMProviderRegistry()
     AgentLLM.register_provider(name, SequentialMockLLMProvider(responses))
+    return AgentLLM(provider=name, config=Config(api_key="sk-test"))
+
+
+class ToolCallMockLLMProvider(LLMProvider):
+    """Returns LLMResponse objects with tool_calls on successive calls."""
+
+    def __init__(self, responses: list[LLMResponse]):
+        self._responses = list(responses)
+        self._call_count = 0
+
+    def chat(self, messages, model, temperature, tools=None, tool_choice=None) -> LLMResponse:
+        idx = min(self._call_count, len(self._responses) - 1)
+        self._call_count += 1
+        return self._responses[idx]
+
+    def chat_stream(self, messages, model, temperature, tools=None, tool_choice=None) -> Iterator[LLMChunk]:
+        yield LLMChunk(delta="mock")
+
+
+def _make_toolcall_llm(responses: list[LLMResponse], name: str = "tc") -> AgentLLM:
+    """Create an AgentLLM that returns pre-built LLMResponse objects (with tool_calls)."""
+    AgentLLM._registry = LLMProviderRegistry()
+    AgentLLM.register_provider(name, ToolCallMockLLMProvider(responses))
     return AgentLLM(provider=name, config=Config(api_key="sk-test"))
 
 
@@ -688,3 +712,122 @@ class TestReflectionAgent:
         assert len(history) == 2
         assert history[0].role == "user"
         assert history[1].role == "assistant"
+
+
+class TestFunctionCallAgent:
+    """Test FunctionCallAgent — B6"""
+
+    def test_direct_answer_no_tools(self):
+        """LLM answers directly without tool calls."""
+        llm = _make_toolcall_llm([
+            LLMResponse(content="The answer is 42"),
+        ])
+        agent = FunctionCallAgent(name="test", llm=llm)
+        result = agent.run("What is the answer?")
+        assert result == "The answer is 42"
+
+    def test_tool_call_then_answer(self):
+        """LLM returns tool_calls → execute → LLM answers."""
+        registry = ToolRegistry()
+        registry.register_function("calc", "Calculate", lambda args: "42")
+
+        llm = _make_toolcall_llm([
+            LLMResponse(content="", tool_calls=[{
+                "id": "call_1",
+                "function": {"name": "calc", "arguments": '{"expression": "6*7"}'},
+            }]),
+            LLMResponse(content="The answer is 42"),
+        ])
+        agent = FunctionCallAgent(name="test", llm=llm, tool_registry=registry)
+        result = agent.run("Calculate 6*7")
+        assert result == "The answer is 42"
+
+    def test_nonexistent_tool_returns_error(self):
+        """Calling a nonexistent tool → error message injected, loop continues."""
+        llm = _make_toolcall_llm([
+            LLMResponse(content="", tool_calls=[{
+                "id": "call_1",
+                "function": {"name": "missing_tool", "arguments": '{}'},
+            }]),
+            LLMResponse(content="I couldn't find that tool"),
+        ])
+        agent = FunctionCallAgent(name="test", llm=llm, tool_registry=ToolRegistry())
+        result = agent.run("Do something")
+        assert result == "I couldn't find that tool"
+
+    def test_tool_error_continues_loop(self):
+        """Tool execution error → error in messages → LLM can recover."""
+        def failing_func(args):
+            raise ValueError("tool broke")
+
+        registry = ToolRegistry()
+        registry.register_function("bad_tool", "Failing tool", failing_func)
+
+        llm = _make_toolcall_llm([
+            LLMResponse(content="", tool_calls=[{
+                "id": "call_1",
+                "function": {"name": "bad_tool", "arguments": '{}'},
+            }]),
+            LLMResponse(content="Tool failed, but I can still answer"),
+        ])
+        agent = FunctionCallAgent(name="test", llm=llm, tool_registry=registry)
+        result = agent.run("Try the tool")
+        assert "still answer" in result
+
+    def test_max_steps_returns_last_content(self):
+        """Max steps exceeded → returns last LLM content."""
+        tool_call = {
+            "id": "call_1",
+            "function": {"name": "echo", "arguments": '{"x": 1}'},
+        }
+        llm = _make_toolcall_llm([
+            LLMResponse(content="thinking...", tool_calls=[tool_call]),
+            LLMResponse(content="still thinking...", tool_calls=[tool_call]),
+            LLMResponse(content="third try"),
+        ])
+
+        registry = ToolRegistry()
+        registry.register_function("echo", "Echo", lambda args: "ok")
+
+        agent = FunctionCallAgent(
+            name="test", llm=llm, tool_registry=registry,
+            config=Config(api_key="sk-test", max_steps=2),
+        )
+        result = agent.run("Do many things")
+        assert result == "still thinking..."
+
+    def test_run_id_set(self):
+        llm = _make_toolcall_llm([LLMResponse(content="ok")])
+        agent = FunctionCallAgent(name="test", llm=llm)
+        agent.run("hi")
+        assert len(agent.run_id) == 8
+
+    def test_history_recorded(self):
+        llm = _make_toolcall_llm([LLMResponse(content="answer")])
+        agent = FunctionCallAgent(name="test", llm=llm)
+        agent.run("question")
+        history = agent.get_history()
+        assert len(history) == 2
+        assert history[0].role == "user"
+        assert history[1].role == "assistant"
+
+    def test_build_tool_schemas(self):
+        """_build_tool_schemas generates correct OpenAI format."""
+        registry = ToolRegistry()
+        registry.register_tool(CalculatorTool())
+        registry.register_function("greet", "Say hello", lambda args: "hi")
+
+        llm = _make_toolcall_llm([LLMResponse(content="ok")])
+        agent = FunctionCallAgent(name="test", llm=llm, tool_registry=registry)
+        schemas = agent._build_tool_schemas()
+        names = [s["function"]["name"] for s in schemas]
+        assert "calculator" in names
+        assert "greet" in names
+
+    def test_parse_function_call_arguments(self):
+        """_parse_function_call_arguments handles valid JSON and edge cases."""
+        llm = _make_toolcall_llm([LLMResponse(content="ok")])
+        agent = FunctionCallAgent(name="test", llm=llm)
+        assert agent._parse_function_call_arguments('{"a": 1}') == {"a": 1}
+        assert agent._parse_function_call_arguments("") == {}
+        assert agent._parse_function_call_arguments("not json") == {}
