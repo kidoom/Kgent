@@ -81,12 +81,12 @@
 
 | 编号 | 任务 | 状态 | 完成日期 | 备注 |
 |------|------|------|---------|------|
-| E1 | Memory 基类 + MemoryManager | [ ] | | |
-| E2 | WorkingMemory + EpisodicMemory | [ ] | | |
-| E2.5 | SemanticMemory | [ ] | | v0.4 可选 |
-| E3 | MemoryTool | [ ] | | |
-| E4 | ContextBuilder | [ ] | | |
-| E5 | NoteTool + TerminalTool | [ ] | | |
+| E1 | Memory 基类 + MemoryManager | [x] | 2026-05-09 | BaseMemory ABC + MemoryItem + MemoryManager 多后端编排 |
+| E2 | WorkingMemory + EpisodicMemory | [x] | 2026-05-09 | TTL+容量 LRU 淘汰 / 时间序列+时间范围检索 |
+| E2.5 | SemanticMemory | [x] | 2026-05-09 | 可插拔 embedding_fn + 余弦相似度 + 子串回退 |
+| E3 | MemoryTool | [x] | 2026-05-09 | remember/recall 操作封装为 Tool |
+| E4 | ContextBuilder | [x] | 2026-05-09 | GSSC 流水线 (Gather→Select→Structure→Compress) |
+| E5 | NoteTool + TerminalTool | [x] | 2026-05-09 | 笔记 CRUD + 只读文件系统 (路径越界防护) |
 
 #### 阶段 F — 端到端验收
 
