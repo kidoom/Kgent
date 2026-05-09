@@ -59,10 +59,10 @@
 | C3 | Agent 基类框架化 | [x] | 2026-05-07 | 注入 custom_prompt 模板变量 + run_id + _format_prompt |
 | C4 | AgentLLM 框架化（多 Provider） | [x] | 2026-05-08 | ZhipuProvider + ModelScopeProvider + auto-detect；PROVIDER_CONFIG 扩充至 5 个 provider |
 | C5 | ToolRegistry 框架化（双注册 + 裸函数拔除） | [x] | 2026-05-08 | v0.1 已实现双注册；补充 TestRegistryFramework 验收测试 |
-| C6 | SimpleAgent 框架化 | [ ] | | |
-| C7 | ReActAgent 框架化 | [ ] | | |
+| C6 | SimpleAgent 框架化 | [x] | 2026-05-09 | v0.1 C2/C3 已注入 Config/custom_prompt/run_id；与 B2 功能一致 |
+| C7 | ReActAgent 框架化 | [x] | 2026-05-09 | v0.1 C2/C3 已注入 Config/custom_prompt/run_id；与 B3 功能一致 |
 | C8 | pip install 验证 | [x] | 2026-05-07 | README + framework import tests + pip install tests (external) |
-| C9 | FunctionCallAgent 框架化 | [ ] | | |
+| C9 | FunctionCallAgent 框架化 | [x] | 2026-05-09 | B6 已内置 Config/custom_prompt/run_id/ToolRegistry；含并行 tool_calls 支持 |
 
 #### 阶段 D — MCP 外部网关 + 链路追踪 + 容错 + 监控
 
