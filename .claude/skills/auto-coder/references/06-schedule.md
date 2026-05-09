@@ -68,14 +68,14 @@
 
 | 编号 | 任务 | 状态 | 完成日期 | 备注 |
 |------|------|------|---------|------|
-| D1 | Span + Tracer 数据模型 | [ ] | | |
-| D2 | TraceExporter | [ ] | | |
-| D3 | Agent 埋点集成 | [ ] | | |
-| D4 | MCPTool | [ ] | | |
-| D5 | MCP Server 模板 | [ ] | | |
-| D6 | MCP + ToolRegistry 集成 | [ ] | | |
-| D7 | 容错机制 | [ ] | | |
-| D8 | 监控（日志 + trace_id + Token） | [ ] | | |
+| D1 | Span + Tracer 数据模型 | [x] | 2026-05-09 | Span/Tracer/contextvars 并发隔离；16 单元测试 |
+| D2 | TraceExporter | [x] | 2026-05-09 | dict/json/tree 三种导出格式；含 token 汇总 |
+| D3 | Agent 埋点集成 | [x] | 2026-05-09 | SimpleAgent + ReActAgent 埋入 trace/step/llm/tool spans |
+| D4 | MCPTool | [x] | 2026-05-09 | 子进程 + JSON-RPC 2.0 + tools/list + tools/call + 自动重连 |
+| D5 | MCP Server 模板 | [x] | 2026-05-09 | mcp_server_template.py：search_docs + list_sources |
+| D6 | MCP + ToolRegistry 集成 | [x] | 2026-05-09 | register_mcp() 自动发现 + 批量注册；ToolRegistry 加锁 |
+| D7 | 容错机制 | [x] | 2026-05-09 | LLM 指数退避重试 + SearchTool 5s 缓存 + MCP 重连 + Registry 加锁 |
+| D8 | 监控（日志 + trace_id + Token） | [x] | 2026-05-09 | AgentLLM 自动注入 token_usage 到 Tracer span；run_id 贯穿 trace |
 
 #### 阶段 E — 记忆系统 + 上下文工程
 

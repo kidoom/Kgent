@@ -5,6 +5,7 @@ from typing import Iterator, Optional
 
 from ..config import Config
 from ..exceptions import ConfigError
+from ..tracing import Tracer
 from .base import LLMProvider, LLMProviderRegistry
 from .models import LLMResponse, LLMChunk
 
@@ -141,13 +142,19 @@ class AgentLLM:
         tool_choice: Optional[str | dict] = None,
         **kwargs,
     ) -> LLMResponse:
-        return self._provider.chat(
+        response = self._provider.chat(
             messages=messages,
             model=self.model,
             temperature=temperature if temperature is not None else 0.0,
             tools=tools,
             tool_choice=tool_choice,
         )
+        # D8: Auto-inject token usage into the current Tracer span
+        if response.usage:
+            tracer = Tracer._instance
+            if tracer:
+                tracer.add_event("llm.end", {"token_usage": response.usage})
+        return response
 
     def stream(
         self,
@@ -157,10 +164,15 @@ class AgentLLM:
         tool_choice: Optional[str | dict] = None,
         **kwargs,
     ) -> Iterator[LLMChunk]:
-        yield from self._provider.chat_stream(
+        for chunk in self._provider.chat_stream(
             messages=messages,
             model=self.model,
             temperature=temperature if temperature is not None else 0.0,
             tools=tools,
             tool_choice=tool_choice,
-        )
+        ):
+            if chunk.usage:
+                tracer = Tracer._instance
+                if tracer:
+                    tracer.add_event("llm.end", {"token_usage": chunk.usage})
+            yield chunk

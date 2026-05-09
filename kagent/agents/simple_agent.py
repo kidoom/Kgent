@@ -1,6 +1,5 @@
 """SimpleAgent: basic conversational agent with optional prompt-based tool calling"""
 
-import json
 import re
 from typing import Iterator, Optional
 
@@ -8,6 +7,7 @@ from ..core.agent import Agent
 from ..core.config import Config
 from ..core.llm import AgentLLM, LLMChunk
 from ..core.message import Message
+from ..core.tracing import Tracer, SpanType, SpanStatus
 from ..tools.base import ToolResult
 from ..tools.registry import ToolRegistry
 
@@ -36,9 +36,11 @@ class SimpleAgent(Agent):
         config: Optional[Config] = None,
         tool_registry: Optional[ToolRegistry] = None,
         custom_prompt: Optional[str] = None,
+        enable_tracing: bool = True,
     ):
         super().__init__(name=name, llm=llm, system_prompt=system_prompt, config=config, custom_prompt=custom_prompt)
         self.tool_registry = tool_registry
+        self.enable_tracing = enable_tracing
 
     # ── Public API ──────────────────────────────────────────────
 
@@ -55,16 +57,36 @@ class SimpleAgent(Agent):
         max_steps = max_steps if max_steps is not None else self.config.max_steps
         self._new_run_id()
 
-        self.add_message(Message(content=input_text, role="user"))
-        messages = self._build_messages(input_text)
+        tracer = Tracer() if self.enable_tracing else None
+        root = tracer.start_trace(f"{self.name}.run", input_text) if tracer else None
+        if root:
+            root.metadata["run_id"] = self.run_id
 
-        if self.tool_registry:
-            return self._run_with_tools(messages, max_steps)
+        try:
+            self.add_message(Message(content=input_text, role="user"))
+            messages = self._build_messages(input_text)
 
-        response = self.llm.invoke(messages)
-        answer = response.content or ""
-        self.add_message(Message(content=answer, role="assistant"))
-        return answer
+            if self.tool_registry:
+                return self._run_with_tools(messages, max_steps, tracer)
+
+            llm_span = tracer.start_span("llm.call", SpanType.LLM_CALL) if tracer else None
+            try:
+                response = self.llm.invoke(messages)
+                answer = response.content or ""
+                if llm_span and response.usage:
+                    llm_span.metadata["token_usage"] = response.usage
+                if llm_span:
+                    tracer.end_span(llm_span, output=answer[:200])
+            except Exception as e:
+                if llm_span:
+                    tracer.end_span(llm_span, status=SpanStatus.ERROR, error=str(e))
+                raise
+
+            self.add_message(Message(content=answer, role="assistant"))
+            return answer
+        finally:
+            if tracer and root:
+                tracer.end_trace(root)
 
     def add_tool(self, tool) -> None:
         """Register a tool with the agent's tool registry.
@@ -96,13 +118,25 @@ class SimpleAgent(Agent):
 
     # ── Internal ────────────────────────────────────────────────
 
-    def _run_with_tools(self, messages: list[dict], max_steps: int) -> str:
+    def _run_with_tools(self, messages: list[dict], max_steps: int, tracer=None) -> str:
         """Loop: LLM call → parse tool calls → execute → inject observation → repeat."""
         best_answer = ""
 
-        for _ in range(max_steps):
-            response = self.llm.invoke(messages)
-            content = response.content or ""
+        for step in range(max_steps):
+            llm_span = tracer.start_span(
+                f"llm.call.step{step}", SpanType.LLM_CALL
+            ) if tracer else None
+            try:
+                response = self.llm.invoke(messages)
+                content = response.content or ""
+                if llm_span and response.usage:
+                    llm_span.metadata["token_usage"] = response.usage
+                if llm_span:
+                    tracer.end_span(llm_span, output=content[:200])
+            except Exception as e:
+                if llm_span:
+                    tracer.end_span(llm_span, status=SpanStatus.ERROR, error=str(e))
+                raise
 
             tool_calls = self._parse_tool_calls(content)
 
@@ -116,10 +150,22 @@ class SimpleAgent(Agent):
             for call in tool_calls:
                 tool_name = call["name"]
                 params_str = call["params"]
-                result = self._execute_tool_call(tool_name, params_str)
-                observations.append(
-                    f"Observation[{tool_name}]: {result.content}"
-                )
+
+                tool_span = tracer.start_span(
+                    f"tool.call.{tool_name}", SpanType.TOOL_CALL,
+                    input_data=params_str[:200],
+                ) if tracer else None
+                try:
+                    result = self._execute_tool_call(tool_name, params_str)
+                    observations.append(
+                        f"Observation[{tool_name}]: {result.content}"
+                    )
+                    if tool_span:
+                        tracer.end_span(tool_span, output=result.content[:200])
+                except Exception as e:
+                    if tool_span:
+                        tracer.end_span(tool_span, status=SpanStatus.ERROR, error=str(e))
+                    raise
 
             # Inject the LLM output + observations into messages for next round
             messages.append({"role": "assistant", "content": content})

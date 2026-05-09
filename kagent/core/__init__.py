@@ -11,6 +11,7 @@ from .llm import (
 )
 from .message import Message
 from .agent import Agent
+from .tracing import Span, SpanType, SpanStatus, Tracer, TraceExporter
 
 __all__ = [
     "Config",
@@ -24,4 +25,9 @@ __all__ = [
     "OpenAIProvider",
     "Message",
     "Agent",
+    "Span",
+    "SpanType",
+    "SpanStatus",
+    "Tracer",
+    "TraceExporter",
 ]

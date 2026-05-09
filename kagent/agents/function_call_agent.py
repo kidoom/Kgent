@@ -1,10 +1,12 @@
 """FunctionCallAgent: native OpenAI function-calling agent"""
 
 import json
+import time
 from typing import Optional
 
 from ..core.agent import Agent
 from ..core.config import Config
+from ..core.exceptions import LLMError
 from ..core.llm import AgentLLM, LLMResponse
 from ..core.message import Message
 from ..tools.registry import ToolRegistry
@@ -145,12 +147,24 @@ class FunctionCallAgent(Agent):
         tools: Optional[list[dict]],
         tool_choice: str | dict,
     ) -> LLMResponse:
-        """Call LLM with tool schemas."""
-        return self.llm.invoke(
-            messages=messages,
-            tools=tools,
-            tool_choice=tool_choice if tools else None,
-        )
+        """Call LLM with tool schemas. Retries on timeout/429 with exponential backoff (L3)."""
+        max_retries = 3
+        backoff = 1.0
+
+        for attempt in range(max_retries + 1):
+            try:
+                return self.llm.invoke(
+                    messages=messages,
+                    tools=tools,
+                    tool_choice=tool_choice if tools else None,
+                )
+            except LLMError as e:
+                # Only retry on the last attempt; otherwise backoff and retry
+                if attempt < max_retries:
+                    time.sleep(backoff)
+                    backoff *= 2
+                    continue
+                raise
 
     def _extract_message_content(self, response: LLMResponse) -> str:
         """Extract text content from LLM response."""

@@ -1,8 +1,12 @@
 """Tool registry: registration, lifecycle, and execution of tools"""
 
-from typing import Any, Callable, Optional
+import threading
+from typing import Any, Callable, Optional, TYPE_CHECKING
 
 from .base import Tool, ToolResult, ToolParameter
+
+if TYPE_CHECKING:
+    from .mcp_tool import MCPTool
 
 
 class ToolRegistry:
@@ -19,6 +23,7 @@ class ToolRegistry:
         self._tools: dict[str, Tool] = {}
         self._functions: dict[str, dict] = {}
         self._disabled: set[str] = set()
+        self._lock = threading.Lock()
 
     # ── Registration ──────────────────────────────────────────
 
@@ -26,7 +31,8 @@ class ToolRegistry:
         """Register a Tool instance."""
         if not isinstance(tool, Tool):
             raise TypeError(f"Expected Tool instance, got {type(tool).__name__}")
-        self._tools[tool.name] = tool
+        with self._lock:
+            self._tools[tool.name] = tool
 
     def register_function(
         self,
@@ -36,39 +42,55 @@ class ToolRegistry:
         parameters: Optional[list[ToolParameter]] = None,
     ) -> None:
         """Register a bare function as a tool."""
-        self._functions[name] = {
-            "name": name,
-            "description": description,
-            "func": func,
-            "parameters": parameters or [],
-        }
+        with self._lock:
+            self._functions[name] = {
+                "name": name,
+                "description": description,
+                "func": func,
+                "parameters": parameters or [],
+            }
+
+    def register_mcp(self, mcp_tool: "MCPTool") -> list[str]:
+        """Auto-discover and register all tools from an MCPTool.
+
+        Returns the list of registered tool names.
+        """
+        remote_tools = mcp_tool.discover_tools()
+        registered = []
+        for tool in remote_tools:
+            self.register_tool(tool)
+            registered.append(tool.name)
+        return registered
 
     def unregister(self, name: str) -> bool:
         """Permanently remove a tool. Returns True if removed."""
-        self._disabled.discard(name)
-        if name in self._tools:
-            del self._tools[name]
-            return True
-        if name in self._functions:
-            del self._functions[name]
-            return True
-        return False
+        with self._lock:
+            self._disabled.discard(name)
+            if name in self._tools:
+                del self._tools[name]
+                return True
+            if name in self._functions:
+                del self._functions[name]
+                return True
+            return False
 
     # ── Lifecycle ─────────────────────────────────────────────
 
     def disable(self, name: str) -> bool:
         """Disable a registered tool. Disabled tools reject execution."""
-        if name in self._tools or name in self._functions:
-            self._disabled.add(name)
-            return True
-        return False
+        with self._lock:
+            if name in self._tools or name in self._functions:
+                self._disabled.add(name)
+                return True
+            return False
 
     def enable(self, name: str) -> bool:
         """Re-enable a previously disabled tool."""
-        if name in self._disabled:
-            self._disabled.discard(name)
-            return True
-        return False
+        with self._lock:
+            if name in self._disabled:
+                self._disabled.discard(name)
+                return True
+            return False
 
     def is_enabled(self, name: str) -> bool:
         """Check if a tool is currently enabled for execution."""
@@ -90,15 +112,22 @@ class ToolRegistry:
           2. Disabled → rejected
           3. Execution error → ToolResult(success=False)
         """
+        # Take an immutable snapshot of the registry state under lock
+        with self._lock:
+            tool = self._tools.get(name)
+            func_info = self._functions.get(name)
+            is_disabled = name in self._disabled
+            is_known = tool is not None or func_info is not None
+
         # Guard: not registered
-        if not self.is_registered(name):
+        if not is_known:
             return ToolResult(
                 content=f"[ERROR] 工具 '{name}' 未注册",
                 success=False,
                 error="tool_not_found",
             )
         # Guard: disabled
-        if not self.is_enabled(name):
+        if is_disabled:
             return ToolResult(
                 content=f"[ERROR] 工具 '{name}' 已被禁用",
                 success=False,
@@ -106,11 +135,11 @@ class ToolRegistry:
             )
 
         try:
-            if name in self._tools:
-                return self._tools[name].run(arguments)
+            if tool is not None:
+                return tool.run(arguments)
 
-            if name in self._functions:
-                result = self._functions[name]["func"](arguments)
+            if func_info is not None:
+                result = func_info["func"](arguments)
                 return ToolResult(content=str(result), success=True)
         except Exception as e:
             return ToolResult(

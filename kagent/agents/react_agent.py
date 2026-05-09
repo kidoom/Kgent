@@ -7,6 +7,7 @@ from ..core.agent import Agent
 from ..core.config import Config
 from ..core.llm import AgentLLM
 from ..core.message import Message
+from ..core.tracing import Tracer, SpanType, SpanStatus
 from ..tools.base import ToolResult
 from ..tools.registry import ToolRegistry
 
@@ -63,9 +64,11 @@ class ReActAgent(Agent):
         config: Optional[Config] = None,
         tool_registry: Optional[ToolRegistry] = None,
         custom_prompt: Optional[str] = None,
+        enable_tracing: bool = True,
     ):
         super().__init__(name=name, llm=llm, system_prompt=system_prompt, config=config, custom_prompt=custom_prompt)
         self.tool_registry = tool_registry
+        self.enable_tracing = enable_tracing
 
     # ── Public API ──────────────────────────────────────────────
 
@@ -82,55 +85,103 @@ class ReActAgent(Agent):
         max_steps = max_steps if max_steps is not None else self.config.max_steps
         self._new_run_id()
 
-        self.add_message(Message(content=input_text, role="user"))
+        tracer = Tracer() if self.enable_tracing else None
+        root = tracer.start_trace(f"{self.name}.run", input_text) if tracer else None
+        if root:
+            root.metadata["run_id"] = self.run_id
 
-        best_answer = ""
+        try:
+            self.add_message(Message(content=input_text, role="user"))
+            best_answer = ""
 
-        for step in range(max_steps):
-            prompt = self._format_prompt(input_text)
-            messages = [{"role": "user", "content": prompt}]
+            for step in range(max_steps):
+                step_span = tracer.start_span(
+                    f"step.{step}", SpanType.AGENT_STEP
+                ) if tracer else None
 
-            response = self.llm.invoke(messages)
-            content = response.content or ""
+                try:
+                    prompt = self._format_prompt(input_text)
+                    messages = [{"role": "user", "content": prompt}]
 
-            thought, action = self._parse_output(content)
+                    # LLM call
+                    llm_span = tracer.start_span(
+                        f"llm.call.step{step}", SpanType.LLM_CALL
+                    ) if tracer else None
+                    try:
+                        response = self.llm.invoke(messages)
+                        content = response.content or ""
+                        if llm_span and response.usage:
+                            llm_span.metadata["token_usage"] = response.usage
+                        if llm_span:
+                            tracer.end_span(llm_span, output=content[:200])
+                    except Exception as e:
+                        if llm_span:
+                            tracer.end_span(llm_span, status=SpanStatus.ERROR, error=str(e))
+                        raise
 
-            # No action found — inject error observation and continue
-            if action is None:
-                self.add_message(Message(content=content, role="assistant"))
-                self.add_message(
-                    Message(
-                        content="Observation: 格式错误，请严格遵循 Thought/Action 格式",
-                        role="user",
+                    thought, action = self._parse_output(content)
+
+                    # No action found — inject error observation and continue
+                    if action is None:
+                        self.add_message(Message(content=content, role="assistant"))
+                        self.add_message(
+                            Message(
+                                content="Observation: 格式错误，请严格遵循 Thought/Action 格式",
+                                role="user",
+                            )
+                        )
+                        if step_span:
+                            tracer.add_event("error", {"reason": "no_action_found"})
+                        best_answer = content
+                        continue
+
+                    # Parse the action
+                    tool_name, tool_input = self._parse_action(action)
+
+                    # Check for Finish action
+                    if tool_name.lower() == "finish":
+                        best_answer = tool_input
+                        if step_span:
+                            tracer.end_span(step_span, output=best_answer[:200])
+                        break
+
+                    # Execute tool
+                    tool_span = tracer.start_span(
+                        f"tool.call.{tool_name}", SpanType.TOOL_CALL,
+                        input_data=tool_input[:200],
+                    ) if tracer else None
+                    try:
+                        if self.tool_registry:
+                            result = self._execute_tool(tool_name, tool_input)
+                            observation = result.content
+                        else:
+                            observation = f"[ERROR] 工具 '{tool_name}' 不可用（未配置 ToolRegistry）"
+                        if tool_span:
+                            tracer.end_span(tool_span, output=observation[:200])
+                    except Exception as e:
+                        if tool_span:
+                            tracer.end_span(tool_span, status=SpanStatus.ERROR, error=str(e))
+                        raise
+
+                    # Inject into history for next iteration
+                    self.add_message(Message(content=content, role="assistant"))
+                    self.add_message(
+                        Message(content=f"Observation: {observation}", role="user")
                     )
-                )
-                best_answer = content
-                continue
+                    best_answer = content
 
-            # Parse the action
-            tool_name, tool_input = self._parse_action(action)
+                    if step_span:
+                        tracer.end_span(step_span)
+                except Exception:
+                    if step_span and step_span.end_time is None:
+                        tracer.end_span(step_span, status=SpanStatus.ERROR)
+                    raise
 
-            # Check for Finish action
-            if tool_name.lower() == "finish":
-                best_answer = tool_input
-                break
-
-            # Execute tool
-            if self.tool_registry:
-                result = self._execute_tool(tool_name, tool_input)
-                observation = result.content
-            else:
-                observation = f"[ERROR] 工具 '{tool_name}' 不可用（未配置 ToolRegistry）"
-
-            # Inject into history for next iteration
-            self.add_message(Message(content=content, role="assistant"))
-            self.add_message(
-                Message(content=f"Observation: {observation}", role="user")
-            )
-            best_answer = content
-
-        self.add_message(Message(content=best_answer, role="assistant"))
-        return best_answer
+            self.add_message(Message(content=best_answer, role="assistant"))
+            return best_answer
+        finally:
+            if tracer and root:
+                tracer.end_trace(root)
 
     # ── Internal ────────────────────────────────────────────────
 

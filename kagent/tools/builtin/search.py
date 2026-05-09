@@ -1,8 +1,14 @@
 """SearchTool: single-backend web search (SerpApi or Tavily)"""
 
 import os
+import time
+from collections import OrderedDict
 
 from ..base import Tool, ToolResult, ToolParameter
+
+# Idempotent cache: same query within _CACHE_TTL seconds returns cached result
+_CACHE_TTL = 5.0
+_MAX_CACHE_SIZE = 128
 
 
 class SearchTool(Tool):
@@ -14,6 +20,26 @@ class SearchTool(Tool):
             description="搜索互联网获取实时信息",
         )
         self._backend = os.getenv("SEARCH_BACKEND", "tavily").lower()
+        self._cache: OrderedDict[str, tuple[float, ToolResult]] = OrderedDict()
+
+    def _get_cached(self, query: str) -> ToolResult | None:
+        """Return cached result if within TTL, else evict and return None."""
+        if query in self._cache:
+            ts, result = self._cache[query]
+            if time.time() - ts < _CACHE_TTL:
+                # Move to end (most recently used)
+                self._cache.move_to_end(query)
+                return result
+            else:
+                del self._cache[query]
+        return None
+
+    def _put_cache(self, query: str, result: ToolResult) -> None:
+        """Store result in cache with current timestamp."""
+        self._cache[query] = (time.time(), result)
+        self._cache.move_to_end(query)
+        while len(self._cache) > _MAX_CACHE_SIZE:
+            self._cache.popitem(last=False)
 
     def run(self, parameters: dict) -> ToolResult:
         query = parameters.get("query", "").strip()
@@ -23,6 +49,11 @@ class SearchTool(Tool):
                 success=False,
                 error="empty_query",
             )
+
+        # I1: Idempotent cache — same query within 5s returns cached result
+        cached = self._get_cached(query)
+        if cached is not None:
+            return cached
 
         api_key = self._get_api_key()
         if not api_key:
@@ -34,9 +65,13 @@ class SearchTool(Tool):
 
         try:
             if self._backend == "tavily":
-                return self._search_tavily(api_key, query)
+                result = self._search_tavily(api_key, query)
             else:
-                return self._search_serpapi(api_key, query)
+                result = self._search_serpapi(api_key, query)
+
+            if result.success:
+                self._put_cache(query, result)
+            return result
         except Exception as e:
             return ToolResult(
                 content=f"[ERROR] 搜索失败: {e}",
