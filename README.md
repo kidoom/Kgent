@@ -1,28 +1,34 @@
-# Kagent
+# Kgent
 
-Pluggable AI Agent Framework — build agents with swappable LLMs and tools.
+Kgent V0.1 is a minimal FastAPI agent runtime built from a Claude Code-style agent loop.
 
-## Install
+The first version intentionally stays small:
+
+```text
+user input -> model -> tool_use -> runtime -> tool_result -> model -> final answer
+```
+
+## Run Backend
 
 ```bash
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
+uvicorn app.main:app --app-dir backend --reload
 ```
 
-## Quickstart
+Then send a request:
 
-```python
-from kagent import SimpleAgent, AgentLLM, Config
-
-llm = AgentLLM(config=Config(api_key="sk-xxx"))
-agent = SimpleAgent(name="demo", llm=llm)
-print(agent.run("Hello!"))
+```bash
+curl -X POST http://127.0.0.1:8000/api/chat \
+  -H "Content-Type: application/json" \
+  -d "{\"message\":\"帮我算一下 12 * 8 + 6\"}"
 ```
 
-## v0.1 Scope
+## V0.1 Design
 
-- **Agent 范式**: SimpleAgent (prompt-based tool calling), ReActAgent (Thought/Action/Observation)
-- **LLM 可插拔**: OpenAI-compatible providers, lazy-load via config
-- **工具可插拔**: ToolRegistry with Calculator + Search built-in
-- **配置驱动**: `.env` based config via `Config.from_env()`
+See [DEV_SPEC.md](DEV_SPEC.md).
 
-See [DEV_SPEC.md](DEV_SPEC.md) for full specification.
+## Model Client
+
+By default, Kgent uses a deterministic local model client so the agent loop can be tested without an API key. Set `KGENT_MODEL_CLIENT=openai` and `OPENAI_API_KEY` later when we add the real provider path.

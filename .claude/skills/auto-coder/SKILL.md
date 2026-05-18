@@ -75,11 +75,16 @@ Quick-check predecessor artifacts exist (file-level only). On mismatch, log a wa
 
 2. **Extract** from spec: inputs/outputs, design principles (Pluggable? Config-driven? Factory?), file list, acceptance criteria.
 
-3. **Plan** files to create/modify before writing any code.
+3. **Present plan to user before coding:**
+   - List every file to create/modify
+   - State the config source (must be `settings.json` via Config class, NEVER `.env` or hardcoded)
+   - State the environment (must be system Python with `.venv`, NEVER Anaconda)
+   - List key design decisions and their spec justification
+   - **WAIT for user confirmation before writing any code**
 
 4. **Code** — project-specific rules:
    - Treat spec as single source of truth
-   - Use `config/settings.yaml` values, never hardcode
+   - Load all config from `settings.json` via Config class, never hardcode
    - Match existing codebase patterns and style
 
 5. **Write tests** alongside code:
