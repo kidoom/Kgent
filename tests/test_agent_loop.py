@@ -8,6 +8,18 @@ from app.tools.registry import build_tools
 
 
 @pytest.mark.asyncio
+async def test_agent_pure_text_think_then_final() -> None:
+    result = await run_agent(
+        user_input="介绍一下你自己",
+        model_client=HeuristicModelClient(),
+        tools=build_tools(Path.cwd()),
+    )
+
+    assert [step.type for step in result.steps] == ["think", "final"]
+    assert result.steps[-1].content == result.answer
+
+
+@pytest.mark.asyncio
 async def test_agent_calculator_tool(tmp_path: Path) -> None:
     result = await run_agent(
         user_input="帮我算一下 12 * 8 + 6",
@@ -16,8 +28,15 @@ async def test_agent_calculator_tool(tmp_path: Path) -> None:
     )
 
     assert "102" in result.answer
-    assert [step.type for step in result.steps] == ["tool_use", "tool_result"]
-    assert result.steps[0].name == "calculator"
+    assert [step.type for step in result.steps] == [
+        "think",
+        "call",
+        "observe",
+        "think",
+        "final",
+    ]
+    assert result.steps[1].tool_name == "calculator"
+    assert result.steps[2].is_error is False
 
 
 @pytest.mark.asyncio
@@ -31,5 +50,20 @@ async def test_agent_read_file_tool(tmp_path: Path) -> None:
     )
 
     assert "Demo" in result.answer
-    assert result.steps[0].name == "read_file"
-    assert result.steps[1].is_error is False
+    assert result.steps[1].type == "call"
+    assert result.steps[1].tool_name == "read_file"
+    assert result.steps[2].type == "observe"
+    assert result.steps[2].is_error is False
+
+
+@pytest.mark.asyncio
+async def test_agent_tool_error_observe(tmp_path: Path) -> None:
+    result = await run_agent(
+        user_input="请读取 missing.txt 并总结",
+        model_client=HeuristicModelClient(),
+        tools=build_tools(tmp_path),
+    )
+
+    observe = next(step for step in result.steps if step.type == "observe")
+    assert observe.is_error is True
+    assert result.steps[-1].type == "final"

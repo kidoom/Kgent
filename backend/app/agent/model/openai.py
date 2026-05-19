@@ -23,13 +23,15 @@ class OpenAIModelClient:
         self._client = AsyncOpenAI(api_key=api_key or None, base_url=base_url or None)
 
     async def call_model(self, messages: list[Message], tools: list[dict[str, Any]]) -> ModelResponse:
+        request: dict[str, Any] = {
+            "model": self.model,
+            "messages": _to_openai_messages(messages),
+        }
+        if tools:
+            request["tools"] = [_to_openai_tool(tool) for tool in tools]
+            request["tool_choice"] = "auto"
         try:
-            response = await self._client.chat.completions.create(
-                model=self.model,
-                messages=_to_openai_messages(messages),
-                tools=[_to_openai_tool(tool) for tool in tools],
-                tool_choice="auto",
-            )
+            response = await self._client.chat.completions.create(**request)
         except Exception as exc:
             raise ModelClientError(f"Model API call failed: {exc}") from exc
 
@@ -51,13 +53,23 @@ class OpenAIModelClient:
                         input=args,
                     )
                 )
+            text = (choice.content or "").strip()
             return ModelResponse(
-                assistant_message=Message(role="assistant", content=tool_uses),
+                assistant_message=Message(
+                    role="assistant",
+                    content=tool_uses,
+                    assistant_text=text or None,
+                ),
+                text=text,
                 tool_uses=tool_uses,
             )
 
         text = choice.content or ""
         return ModelResponse(assistant_message=Message(role="assistant", content=text), text=text)
+
+    async def close(self) -> None:
+        """Close the underlying HTTP client to avoid event loop warnings."""
+        await self._client.close()
 
 
 # ---------------------------------------------------------------------------
@@ -73,7 +85,7 @@ def _to_openai_messages(messages: list[Message]) -> list[dict[str, Any]]:
         if message.role == "assistant":
             converted.append({
                 "role": "assistant",
-                "content": None,
+                "content": message.assistant_text or None,
                 "tool_calls": [
                     {
                         "id": block.id,

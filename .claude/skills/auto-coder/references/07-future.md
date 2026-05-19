@@ -1,10 +1,61 @@
-## 7. Axioms（内嵌原则）
+## 7. FastAPI API 设计
 
-1. **Spec before implementation** — 接口 + 契约 + 验收标准先于代码定义
-2. **One hour, one verifiable increment** — 每个任务 ~1h，有可测试的输出
-3. **Test-first, always** — 先写测试方法，再写代码
-4. **Interfaces before implementations** — 抽象基类 + 工厂先于具体实现
-5. **Configuration drives behavior** — 单一配置源，切换零代码改动
-6. **Fail fast, degrade gracefully** — 启动时校验，运行时降级；工具失败返回用户可读错误，不中断 Agent 循环
-7. **Observability is not optional** — 每次 run() 生成 trace_id + 结构日志 + Token 用量统计
-8. **SPEC is a living document** — 每完成一个任务更新进度表
+### 7.1 `GET /health`
+
+用于存活检查与配置探针（V0.1.3+）：
+
+```json
+{
+  "status": "ok",
+  "provider": "heuristic",
+  "available_providers": ["heuristic", "openai"],
+  "model_client_ready": true
+}
+```
+
+### 7.2 `POST /api/chat`
+
+请求：
+
+```json
+{
+  "session_id": "default",
+  "message": "请读取 README.md 并总结这个项目"
+}
+```
+
+响应：
+
+```json
+{
+  "session_id": "default",
+  "answer": "这个项目是...",
+  "message_count": 6,
+  "steps": [
+    {
+      "type": "think",
+      "turn_index": 0,
+      "content": "我先读取 README.md。"
+    },
+    {
+      "type": "call",
+      "turn_index": 0,
+      "tool_name": "read_file",
+      "tool_input": { "path": "README.md" }
+    },
+    {
+      "type": "observe",
+      "turn_index": 0,
+      "tool_name": "read_file",
+      "content": "..."
+    },
+    {
+      "type": "final",
+      "turn_index": 1,
+      "content": "..."
+    }
+  ]
+}
+```
+
+`steps` 是 V0.1.2+ 的可观察 agent loop 轨迹（`think/call/observe/final`），详见 §15。

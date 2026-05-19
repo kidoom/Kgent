@@ -1,6 +1,6 @@
 ---
 name: auto-coder
-description: Autonomous spec-driven development agent. Syncs DEV_SPEC.md into chapter-based reference files, identifies the next pending task from the schedule, implements code following spec architecture and patterns, runs tests with up to 3 auto-fix rounds, and persists progress with atomic commits. Use when user says "auto code", "自动开发", "自动写代码", "auto dev", "一键开发", "autopilot", or wants fully automated spec-to-code workflow.
+description: Autonomous spec-driven development agent. Syncs the canonical mini-agent spec into chapter-based reference files, identifies the next pending task from the schedule, implements code following spec architecture and patterns, runs tests with up to 3 auto-fix rounds, and persists progress with atomic commits. Use when user says "auto code", "自动开发", "自动写代码", "auto dev", "一键开发", "autopilot", or wants fully automated spec-to-code workflow.
 ---
 
 # Auto Coder
@@ -41,12 +41,17 @@ All files under `.claude/skills/auto-coder/references/`:
 
 ### 1. Sync Spec
 
+Canonical spec (configured in repo `.spec-source`):
+
+```text
+D:\claude-code\spec\mini-agent-v0.1\DEV_spec.md
+```
+
 ```powershell
 python .claude/skills/auto-coder/scripts/sync_spec.py
 ```
 
-Then read the schedule file to get task statuses:
-- Read `.claude/skills/auto-coder/references/06-schedule.md`
+Then read the synced chapter files under `.claude/skills/auto-coder/references/` (for example `14-chapter-14.md` for short-term memory).
 
 Task markers:
 
@@ -111,7 +116,7 @@ Round 3 still failing → STOP, show failure report to user
 
 ### 5. Persist
 
-1. **Update `DEV_SPEC.md`** (global file): change task marker `[ ]` → `[x]`
+1. **Update the canonical spec** at `D:\claude-code\spec\mini-agent-v0.1\DEV_spec.md` (or the path in `.spec-source`): change task marker `[ ]` → `[x]`
 2. **Re-sync**: `python .claude/skills/auto-coder/scripts/sync_spec.py --force`
 3. **Show summary & ask**:
 

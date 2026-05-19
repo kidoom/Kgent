@@ -27,7 +27,15 @@ curl -X POST http://127.0.0.1:8000/api/chat \
 
 ## V0.1 Design
 
-See [DEV_SPEC.md](DEV_SPEC.md).
+Canonical spec lives outside this repo:
+
+`D:\claude-code\spec\mini-agent-v0.1\DEV_spec.md`
+
+The path is also recorded in [`.spec-source`](.spec-source). Sync into chapter references with:
+
+```bash
+python .claude/skills/auto-coder/scripts/sync_spec.py --force
+```
 
 ## Model Client
 
@@ -47,3 +55,19 @@ KGENT_MODEL=deepseek-chat
 KGENT_API_KEY=your_api_key
 KGENT_BASE_URL=https://api.deepseek.com
 ```
+
+## Debug CLI
+
+Run the agent loop in observable debug mode:
+
+```bash
+python -m app.debug_cli "帮我算一下 12 * 8 + 6"
+```
+
+For interactive mode:
+
+```bash
+python -m app.debug_cli
+```
+
+The debug CLI prints messages, model outputs, tool calls, tool results, and the final answer. It shows observable runtime events, not hidden model chain-of-thought.

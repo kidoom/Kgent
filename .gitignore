@@ -7,6 +7,7 @@ htmlcov/
 .env
 .env.*
 !.env.example
+settings.json
 .DS_Store
 *.egg-info/
 dist/

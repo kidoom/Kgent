@@ -106,8 +106,8 @@ Round 3 still failing → STOP, show failure report to user
 
 ### 5. Persist
 
-1. **Update `DEV_SPEC.md`** (global file): change task marker `[ ]` → `[x]`
-2. **Re-sync**: `python .Codex/skills/auto-coder/scripts/sync_spec.py --force`
+1. **Update the canonical spec** at `D:\claude-code\spec\mini-agent-v0.1\DEV_spec.md` (or the path in `.spec-source`)
+2. **Re-sync**: `python .agents/skills/auto-coder/scripts/sync_spec.py --force`
 3. **Show summary & ask**:
 
 ```
