@@ -434,6 +434,144 @@ flowchart LR
   F --> G["Model continues reasoning"]
 ```
 
+## 17. Implementation Status - 2026-05-19
+
+This section records what the current repository has implemented.
+
+### 17.1 Current File Layout
+
+```text
+backend/app/
+  main.py
+  api/
+    chat.py
+  agent/
+    loop.py
+    messages.py
+    model_client.py
+    prompts.py
+    model/
+      __init__.py
+      base.py
+      heuristic.py
+      openai.py
+  tools/
+    base.py
+    registry.py
+    calculator.py
+    list_files.py
+    read_file.py
+  core/
+    config.py
+
+frontend/
+  README.md
+
+tests/
+  test_agent_loop.py
+  test_api.py
+  test_tools.py
+```
+
+### 17.2 Implemented Backend Capabilities
+
+- [x] FastAPI app entrypoint in `backend/app/main.py`.
+- [x] Health endpoint: `GET /health`.
+- [x] Chat endpoint: `POST /api/chat`.
+- [x] Pydantic request/response models for chat API.
+- [x] Minimal model-tool-model loop in `agent/loop.py`.
+- [x] Message protocol models in `agent/messages.py`.
+- [x] Tool protocol and schema projection in `tools/base.py`.
+- [x] Runtime tool registry helpers in `tools/registry.py`.
+- [x] Built-in `calculator` tool.
+- [x] Built-in `list_files` tool.
+- [x] Built-in `read_file` tool.
+- [x] Project-root path guard for file tools.
+- [x] Tool execution errors are returned as `tool_result` blocks instead of crashing the loop.
+- [x] `max_steps` guard in the agent loop.
+- [x] Frontend-friendly step trace containing `tool_use` and `tool_result`.
+
+### 17.3 Implemented Model Layer
+
+- [x] `ModelClientProtocol` boundary.
+- [x] `ModelClientError` for provider/network/parse failures.
+- [x] Pluggable model client registry with `register_model_client()`.
+- [x] Backward-compatible `agent/model_client.py` re-export module.
+- [x] Offline deterministic `heuristic` model client.
+- [x] OpenAI-compatible model client using Chat Completions and tool calls.
+- [x] OpenAI-compatible message/tool conversion helpers.
+- [x] Invalid model tool-call JSON is wrapped as `ModelClientError`.
+- [x] API maps `ModelClientError` to HTTP 502.
+
+### 17.4 Implemented Configuration
+
+- [x] Runtime settings live in `core/config.py`.
+- [x] Configuration source order is:
+
+```text
+environment variables -> .env -> built-in defaults
+```
+
+- [x] Supported variables:
+
+```text
+KGENT_PROVIDER
+KGENT_MODEL
+KGENT_API_KEY
+KGENT_BASE_URL
+KGENT_MAX_STEPS
+KGENT_PROJECT_ROOT
+KGENT_CORS_ORIGINS
+```
+
+- [x] `.env` is parsed without mutating `os.environ`.
+- [x] `settings.json` is no longer part of the configuration path.
+- [x] `.env.example` documents the supported variables.
+- [x] CORS origins are configurable via `KGENT_CORS_ORIGINS`.
+- [x] File tools block hidden paths such as `.env` and `.git/config`.
+
+### 17.5 Implemented Tests
+
+- [x] Tool unit tests for calculator and read-file path traversal.
+- [x] Agent-loop tests for calculator and read-file flows.
+- [x] API test for `/api/chat` calculator flow.
+- [x] API test pins `KGENT_PROVIDER=heuristic` so local real-model config does not affect tests.
+
+Current test command:
+
+```bash
+.venv\Scripts\python.exe -m pytest -q
+```
+
+Current result:
+
+```text
+9 passed
+```
+
+### 17.6 Still Not Implemented
+
+These remain out of scope for the current V0.1 implementation:
+
+- [ ] Real frontend UI beyond `frontend/README.md`.
+- [ ] Streaming model output.
+- [ ] Streaming tool execution.
+- [ ] Tool permission approval flow.
+- [ ] Safe/unsafe tool risk categories.
+- [ ] Parallel tool execution.
+- [ ] Dynamic tool loading.
+- [ ] MCP integration.
+- [ ] Context compression.
+- [ ] Long-term memory.
+- [ ] Persistent conversation storage.
+- [ ] User authentication.
+
+### 17.7 Current Known Risks
+
+- `OpenAIModelClient` is built per request by the chat route; this is simple, but app-level dependency/lifespan management would be better for production.
+- `KGENT_PROVIDER` is free-form and invalid values fail at request time with HTTP 502; configuration validation could fail earlier during startup.
+- `DEV_SPEC.md` contains legacy mojibake text from earlier edits; new status notes are kept in ASCII to avoid worsening encoding issues.
+
 一句话总结：
 
 ```text

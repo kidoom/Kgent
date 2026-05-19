@@ -34,6 +34,8 @@ class ListFilesTool:
 
         entries = []
         for child in sorted(target.iterdir(), key=lambda item: (not item.is_dir(), item.name.lower())):
+            if child.name.startswith("."):
+                continue
             suffix = "/" if child.is_dir() else ""
             entries.append(f"{child.name}{suffix}")
         return "\n".join(entries) if entries else "<empty directory>"
@@ -43,6 +45,8 @@ def _safe_resolve(project_root: Path, raw_path: str) -> Path:
     candidate = Path(raw_path)
     if candidate.is_absolute() or ".." in candidate.parts:
         raise ValueError("path must be project-relative and cannot contain '..'")
+    if any(part.startswith(".") for part in candidate.parts if part not in {"."}):
+        raise ValueError("path cannot reference hidden files or directories")
     resolved = (project_root / candidate).resolve()
     if project_root != resolved and project_root not in resolved.parents:
         raise ValueError("path escapes project root")

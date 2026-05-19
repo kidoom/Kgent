@@ -19,6 +19,56 @@
 11. Error Recovery / Retry：失败后如何恢复
 12. 自己的 agent 项目设计
 
+### 0.1 全局学习图谱
+
+这份笔记不是按源码文件顺序学习，而是按 agent runtime 的“复杂度递增”学习：
+
+```mermaid
+flowchart TD
+    A["最小 Agent Loop"] --> B["消息协议\nsystem/user/assistant/tool_result"]
+    B --> C["工具调用\nschema -> tool_use -> tool_result"]
+    C --> D["工具执行 runtime\n查找/校验/执行/错误回填"]
+    D --> E["工具调度\nsafe 并发 / unsafe 串行"]
+    E --> F["Prompt & Context Builder\nsystemPrompt + messages + tools + context"]
+    F --> G["工具过滤与动态加载\ncore tools / deferred tools"]
+    G --> H["Context Compression\n长任务不爆上下文"]
+    H --> I["Memory Management\n跨会话长期记忆"]
+    I --> J["Persistence / Resume\n状态持久化和恢复"]
+    J --> K["Observability / Trace\n可视化 agent 每一步"]
+    K --> L["Kgent 实践落地\n用 Python/FastAPI 复刻简化版 runtime"]
+```
+
+学习方法：
+
+```text
+Claude Code 负责提供生产级参考范式。
+Kgent 负责把范式转成自己的工程实现。
+```
+
+### 0.2 双仓库工作流
+
+当前采用“双仓库联动”的学习-实践方式：
+
+```mermaid
+flowchart LR
+    A["D:\\claude-code\n学习源码 / 提炼范式"] --> B["学习笔记\n总结机制、图、源码观察"]
+    B --> C["D:\\Kgent\n自己的 agent 项目"]
+    C --> D["DEV_SPEC.md\n转成 V0.x 设计"]
+    D --> E["实现最小版本"]
+    E --> F["测试 / README / 面试表达"]
+    F --> A
+```
+
+每学一个机制，都按下面格式落地：
+
+```text
+1. CC 是怎么做的？
+2. 这个机制解决什么问题？
+3. 抽象成什么通用设计？
+4. Kgent 里如何简化实现？
+5. 用什么测试证明它跑通？
+```
+
 ## 1. 最小 Agent Loop 模型
 
 最小模型不是指 AI model，而是“最简化的心智模型”。
@@ -876,6 +926,141 @@ attachment messages
 
 模型根据这些 schema 输出合法的 `tool_use`。
 
+### 8.4.1 Tool 对象到模型 schema 的流转图
+
+Claude Code 内部不是只有一个“JSON schema 表”。更准确地说：
+
+```text
+runtime 里保存完整 Tool 对象。
+模型请求里只暴露 ToolSchema 投影。
+```
+
+完整 Tool 对象很厚，包含：
+
+```text
+name
+prompt / description
+inputSchema / inputJSONSchema
+call()
+validateInput()
+checkPermissions()
+isConcurrencySafe()
+isReadOnly()
+render / mapToolResult...
+```
+
+模型看到的 schema 很薄，主要是：
+
+```text
+name
+description
+input_schema
+```
+
+流程图：
+
+```mermaid
+flowchart LR
+    A["完整 Tool 对象\nruntime 内部"] --> B["toolToAPISchema()"]
+    B --> C["薄 Tool Schema\nname/description/input_schema"]
+    C --> D["Model Request.tools"]
+    D --> E["模型输出 tool_use\nname + input"]
+    E --> F["runtime findToolByName"]
+    F --> G["找到完整 Tool 对象"]
+    G --> H["校验 input"]
+    H --> I["Tool.call()"]
+    I --> J["tool_result 回填 messages"]
+```
+
+核心句：
+
+```text
+厚对象在 runtime，薄 schema 给模型。
+```
+
+### 8.4.2 工具过滤机制总览图
+
+Claude Code 的工具过滤不是单点逻辑，而是两层过滤：
+
+```text
+第一层：工具池阶段，过滤完整 Tool 对象。
+第二层：API 请求阶段，过滤最终给模型看的 tools schema。
+```
+
+```mermaid
+flowchart TD
+    A["All Tools\nbuilt-in + MCP + special tools"] --> B["工具池组装"]
+    B --> C{"环境 / 模式过滤"}
+    C --> D["simple mode / REPL mode / coordinator mode"]
+    D --> E{"权限 deny rules"}
+    E --> F["被禁止工具直接移除"]
+    E --> G["可用 Tool 对象池"]
+    G --> H{"API 请求阶段"}
+    H --> I{"是否启用 SearchExtraTools?"}
+    I -->|否| J["移除 SearchExtraTools\n其他工具直接转 schema"]
+    I -->|是| K["保留 core tools + SearchExtraTools"]
+    K --> L["deferred tools 不直接进 tools array"]
+    J --> M["Model Request.tools"]
+    L --> M
+```
+
+这样做的目的：
+
+```text
+省上下文
+减少模型选错工具
+保持 prompt cache 稳定
+支持 MCP 工具动态变化
+```
+
+### 8.4.3 动态工具加载图
+
+当工具很多时，Claude Code 不一定把所有工具 schema 都一次性给模型。
+
+可以把工具分成三类：
+
+```text
+core tools:
+  常驻工具，模型每轮都能看到，可以直接调用
+
+deferred tools:
+  按需工具，模型需要先 SearchExtraTools 发现，再 ExecuteExtraTool 执行
+
+disabled / denied tools:
+  当前环境不可用，模型最好连看到都别看到
+```
+
+动态工具加载流程：
+
+```mermaid
+flowchart TD
+    A["用户输入"] --> B["准备本轮 Model Request"]
+    B --> C["runtime 持有完整 tools registry"]
+    C --> D{"启用动态工具加载?"}
+    D -->|否| E["大部分工具 schema 直接进入 tools"]
+    D -->|是| F["只暴露 core tools + SearchExtraTools"]
+    F --> G["deferred tools 暂不进入 tools schema"]
+    G --> H{"模型需要额外能力?"}
+    H -->|否| I["直接用 core tools 或回答"]
+    H -->|是| J["调用 SearchExtraTools"]
+    J --> K["tool_result 返回匹配工具名/描述"]
+    K --> L["模型调用 ExecuteExtraTool"]
+    L --> M["runtime 从完整 registry 找真实工具"]
+    M --> N["校验是否已发现 / 是否可用"]
+    N --> O["执行目标工具"]
+    O --> P["tool_result 返回模型"]
+```
+
+面试表达：
+
+```text
+Claude Code uses a two-level tool exposure model:
+the runtime keeps the full tool registry,
+while each model request receives only a filtered schema view.
+Core tools are exposed directly; deferred tools are discovered through SearchExtraTools
+and executed through ExecuteExtraTool.
+```
+
 ### 8.5 userContext
 
 偏“当前用户/项目状态”的上下文：
@@ -1333,6 +1518,88 @@ Safety / Permission
 Failure Recovery
 Observability
 Trade-offs
+```
+
+### 12.1 Kgent V0.1 最小落地图
+
+Kgent 的第一版不追求完整复刻 Claude Code，而是先证明最核心闭环：
+
+```text
+Frontend -> FastAPI -> agent loop -> model/tool runtime -> JSON response
+```
+
+```mermaid
+flowchart TD
+    A["Frontend\n输入用户问题"] --> B["POST /api/chat"]
+    B --> C["FastAPI Route\napi/chat.py"]
+    C --> D["Agent Loop\nagent/loop.py"]
+    D --> E["Build Model Request\nmessages + tools schema"]
+    E --> F["Model Client\nheuristic / future openai"]
+    F --> G{"assistant output"}
+    G -->|"final text"| H["返回 answer"]
+    G -->|"tool_use"| I["Tool Runtime"]
+    I --> J["registry.find_tool_by_name"]
+    J --> K["Tool.call()"]
+    K --> L["tool_result 追加回 messages"]
+    L --> D
+    H --> M["JSON Response\nanswer + steps"]
+```
+
+V0.1 的验收目标：
+
+```text
+纯文本问题：直接回答
+计算问题：calculator tool_use -> tool_result -> final answer
+读文件问题：read_file tool_use -> tool_result -> final answer
+```
+
+### 12.2 Kgent 版本演进路线图
+
+Kgent 应该按“每学一个 CC 机制，就做一个简化版”的方式演进：
+
+```mermaid
+flowchart TD
+    A["V0.1\n最小 agent loop + 串行工具调用"] --> B["V0.2\npermission / safety layer"]
+    B --> C["V0.3\ntools filtering + enabled/disabled"]
+    C --> D["V0.4\ncontext builder\nsystem/user context 分层"]
+    D --> E["V0.5\ncontext compression"]
+    E --> F["V0.6\nmemory management"]
+    F --> G["V0.7\ndynamic tool loading"]
+    G --> H["V0.8\nstreaming / SSE 实时步骤输出"]
+    H --> I["V0.9\nfrontend observability dashboard"]
+```
+
+每个版本都应该包含：
+
+```text
+DEV_SPEC 更新
+最小实现
+测试用例
+README 中的设计说明
+与 Claude Code 范式的对照说明
+```
+
+### 12.3 学习到实现的闭环
+
+后续每次学习 Claude Code 的一个机制，都不要只停留在“看懂源码”，而要转成 Kgent 的工程任务：
+
+```mermaid
+flowchart LR
+    A["提出问题\n例如：工具过滤怎么做?"] --> B["读 Claude Code 源码"]
+    B --> C["提炼设计动机\n为什么需要它?"]
+    C --> D["画流程图 / 架构图"]
+    D --> E["写入学习笔记"]
+    E --> F["更新 Kgent DEV_SPEC"]
+    F --> G["实现简化版"]
+    G --> H["写测试证明机制跑通"]
+    H --> I["沉淀 README / 面试表达"]
+```
+
+一句话：
+
+```text
+claude-code 负责看懂顶级设计；
+Kgent 负责把设计变成自己的工程能力。
 ```
 
 ## 13. 当前已掌握内容

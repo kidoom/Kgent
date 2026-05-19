@@ -7,6 +7,7 @@ from app.main import app
 
 
 def test_chat_api_calculator(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("KGENT_PROVIDER", "heuristic")
     monkeypatch.setenv("KGENT_PROJECT_ROOT", str(tmp_path))
     get_settings.cache_clear()
 

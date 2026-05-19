@@ -1,8 +1,4 @@
-"""Backward-compatible re-exports.
-
-All implementations live in app.agent.model.* — this module re-exports
-them so existing ``from app.agent.model_client import ...`` keeps working.
-"""
+"""Pluggable model client package."""
 
 from app.agent.model.base import (
     ModelClient,

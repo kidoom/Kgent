@@ -1,0 +1,141 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="920" viewBox="0 0 1280 920" role="img" aria-labelledby="title desc">
+  <title id="title">Kgent Project Architecture</title>
+  <desc id="desc">Rendered architecture diagram for the current Kgent FastAPI agent runtime.</desc>
+  <defs>
+    <style>
+      .bg { fill: #f7f8fb; }
+      .band { fill: #ffffff; stroke: #d7dce5; stroke-width: 1.5; }
+      .box { fill: #ffffff; stroke: #243041; stroke-width: 1.6; rx: 8; }
+      .primary { fill: #eef6ff; stroke: #2f6fad; }
+      .agent { fill: #f2f7ef; stroke: #477a38; }
+      .tool { fill: #fff6e8; stroke: #b87322; }
+      .model { fill: #f7efff; stroke: #7b4eb0; }
+      .data { fill: #eef8f6; stroke: #2e8174; }
+      .muted { fill: #f1f3f6; stroke: #717b8a; }
+      .title { font: 700 30px Arial, "Microsoft YaHei", sans-serif; fill: #172033; }
+      .subtitle { font: 400 15px Arial, "Microsoft YaHei", sans-serif; fill: #526071; }
+      .label { font: 700 16px Arial, "Microsoft YaHei", sans-serif; fill: #172033; }
+      .small { font: 400 13px Arial, "Microsoft YaHei", sans-serif; fill: #415064; }
+      .tiny { font: 400 12px Arial, "Microsoft YaHei", sans-serif; fill: #5b6675; }
+      .section { font: 700 15px Arial, "Microsoft YaHei", sans-serif; fill: #243041; }
+      .arrow { stroke: #334155; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+      .arrowSoft { stroke: #64748b; stroke-width: 1.7; fill: none; marker-end: url(#arrowSoft); stroke-dasharray: 5 5; }
+    </style>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#334155" />
+    </marker>
+    <marker id="arrowSoft" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#64748b" />
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1280" height="920" />
+
+  <text class="title" x="56" y="58">Kgent Current Architecture</text>
+  <text class="subtitle" x="56" y="84">FastAPI agent runtime with model-tool-model loop, local tools, and optional OpenAI-compatible model client.</text>
+
+  <rect class="band" x="42" y="112" width="1196" height="172" rx="12" />
+  <text class="section" x="64" y="142">HTTP Boundary</text>
+
+  <rect class="box primary" x="82" y="170" width="160" height="70" />
+  <text class="label" x="127" y="199">User</text>
+  <text class="small" x="112" y="220">browser/client</text>
+
+  <rect class="box primary" x="306" y="170" width="180" height="70" />
+  <text class="label" x="345" y="198">Frontend V0.1</text>
+  <text class="small" x="330" y="220">minimal UI planned</text>
+
+  <rect class="box primary" x="550" y="160" width="210" height="90" />
+  <text class="label" x="613" y="190">FastAPI App</text>
+  <text class="small" x="594" y="212">backend/app/main.py</text>
+  <text class="tiny" x="596" y="232">CORS + /health + router</text>
+
+  <rect class="box primary" x="828" y="160" width="260" height="90" />
+  <text class="label" x="917" y="190">Chat API</text>
+  <text class="small" x="883" y="212">POST /api/chat</text>
+  <text class="tiny" x="884" y="232">request validation + response model</text>
+
+  <path class="arrow" d="M242 205 H306" />
+  <path class="arrow" d="M486 205 H550" />
+  <path class="arrow" d="M760 205 H828" />
+
+  <rect class="band" x="42" y="316" width="1196" height="238" rx="12" />
+  <text class="section" x="64" y="346">Runtime Assembly</text>
+
+  <rect class="box muted" x="92" y="392" width="230" height="92" />
+  <text class="label" x="153" y="420">Settings</text>
+  <text class="small" x="122" y="443">core/config.py</text>
+  <text class="tiny" x="117" y="465">KGENT_MODEL_CLIENT, max_steps</text>
+
+  <rect class="box tool" x="388" y="392" width="230" height="92" />
+  <text class="label" x="444" y="420">Tool Builder</text>
+  <text class="small" x="421" y="443">tools/registry.py</text>
+  <text class="tiny" x="420" y="465">build_tools(project_root)</text>
+
+  <rect class="box model" x="684" y="392" width="230" height="92" />
+  <text class="label" x="728" y="420">Model Builder</text>
+  <text class="small" x="713" y="443">agent/model_client.py</text>
+  <text class="tiny" x="708" y="465">heuristic or openai client</text>
+
+  <rect class="box agent" x="980" y="382" width="210" height="112" />
+  <text class="label" x="1037" y="412">Agent Loop</text>
+  <text class="small" x="1017" y="435">agent/loop.py</text>
+  <text class="tiny" x="1012" y="457">run_agent(user_input,</text>
+  <text class="tiny" x="1012" y="475">model_client, tools)</text>
+
+  <path class="arrow" d="M958 250 V306 H207 V392" />
+  <path class="arrow" d="M958 250 V306 H503 V392" />
+  <path class="arrow" d="M958 250 V306 H799 V392" />
+  <path class="arrow" d="M322 438 H388" />
+  <path class="arrow" d="M618 438 H684" />
+  <path class="arrow" d="M914 438 H980" />
+
+  <rect class="band" x="42" y="586" width="1196" height="254" rx="12" />
+  <text class="section" x="64" y="616">Agent Execution</text>
+
+  <rect class="box data" x="84" y="662" width="205" height="92" />
+  <text class="label" x="122" y="690">Messages</text>
+  <text class="small" x="107" y="713">messages.py</text>
+  <text class="tiny" x="106" y="735">system/user/assistant/tool_result</text>
+
+  <rect class="box data" x="346" y="662" width="205" height="92" />
+  <text class="label" x="391" y="690">Tool Schemas</text>
+  <text class="small" x="377" y="713">tool_to_schema()</text>
+  <text class="tiny" x="376" y="735">safe schema sent to model</text>
+
+  <rect class="box model" x="608" y="646" width="220" height="124" />
+  <text class="label" x="670" y="676">ModelClient</text>
+  <text class="small" x="642" y="699">call_model(messages, tools)</text>
+  <text class="tiny" x="643" y="722">HeuristicModelClient</text>
+  <text class="tiny" x="643" y="742">OpenAIModelClient</text>
+
+  <rect class="box tool" x="892" y="640" width="240" height="138" />
+  <text class="label" x="970" y="670">Tools</text>
+  <text class="small" x="924" y="694">calculator: safe arithmetic</text>
+  <text class="small" x="924" y="716">list_files: project directory</text>
+  <text class="small" x="924" y="738">read_file: project text file</text>
+  <text class="tiny" x="924" y="760">paths guarded by project_root</text>
+
+  <path class="arrow" d="M1085 494 V586 H186 V662" />
+  <path class="arrow" d="M1085 494 V586 H448 V662" />
+  <path class="arrow" d="M289 708 H346" />
+  <path class="arrow" d="M551 708 H608" />
+  <path class="arrow" d="M828 690 C860 676 865 666 892 666" />
+  <text class="tiny" x="832" y="662">tool_use</text>
+  <path class="arrowSoft" d="M892 752 C852 798 773 805 718 770" />
+  <text class="tiny" x="786" y="818">ToolResultBlock appended to messages, model called again</text>
+
+  <rect class="box agent" x="502" y="848" width="276" height="48" />
+  <text class="label" x="585" y="878">AgentResult</text>
+  <text class="tiny" x="643" y="878"> answer + steps</text>
+
+  <path class="arrow" d="M718 770 V848" />
+  <path class="arrow" d="M640 848 C640 818 1070 825 1070 778" />
+  <text class="tiny" x="791" y="842">continue until final text or max_steps</text>
+
+  <rect class="box muted" x="930" y="848" width="240" height="48" />
+  <text class="label" x="997" y="878">ChatResponse</text>
+  <text class="tiny" x="1095" y="878">API output</text>
+
+  <path class="arrow" d="M778 872 H930" />
+</svg>

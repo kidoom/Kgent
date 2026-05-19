@@ -31,4 +31,19 @@ See [DEV_SPEC.md](DEV_SPEC.md).
 
 ## Model Client
 
-By default, Kgent uses a deterministic local model client so the agent loop can be tested without an API key. Set `KGENT_MODEL_CLIENT=openai` and `OPENAI_API_KEY` later when we add the real provider path.
+By default, Kgent uses a deterministic local model client so the agent loop can be tested without an API key.
+
+Configuration precedence is:
+
+```text
+environment variables -> .env -> built-in defaults
+```
+
+Use these variables for real OpenAI-compatible providers:
+
+```text
+KGENT_PROVIDER=openai
+KGENT_MODEL=deepseek-chat
+KGENT_API_KEY=your_api_key
+KGENT_BASE_URL=https://api.deepseek.com
+```
