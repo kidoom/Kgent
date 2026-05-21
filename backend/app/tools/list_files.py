@@ -7,6 +7,7 @@ from typing import Any
 class ListFilesTool:
     name = "list_files"
     description = "List files and directories under a project-relative path."
+    risk_level = "low"
     input_schema = {
         "type": "object",
         "properties": {

@@ -57,6 +57,9 @@ class AgentStep(BaseModel):
     tool_name: str | None = None
     tool_input: dict[str, Any] | None = None
     is_error: bool = False
+    # V0.2: permission decision attached to `call` steps. None for non-call
+    # steps; backward-compatible default keeps older clients working.
+    decision: Literal["allow", "deny", "ask"] | None = None
 
     @model_validator(mode="after")
     def validate_fields_for_type(self) -> "AgentStep":
@@ -76,6 +79,8 @@ class AgentStep(BaseModel):
                 raise ValueError("observe step requires tool_use_id and tool_name")
             if self.content is None:
                 raise ValueError("observe step requires content")
+        if self.decision is not None and self.type != "call":
+            raise ValueError("decision is only valid on call steps")
         return self
 
 

@@ -2,14 +2,21 @@
 
 ### 7.1 `GET /health`
 
-用于存活检查与配置探针（V0.1.3+）：
+用于存活检查与配置探针：
 
 ```json
 {
   "status": "ok",
   "provider": "heuristic",
   "available_providers": ["heuristic", "openai"],
-  "model_client_ready": true
+  "model_client_ready": true,
+  "permission_mode": "risk_based",
+  "effective_permission_mode": "risk_based",
+  "tool_risks": {
+    "calculator": "low",
+    "list_files": "low",
+    "read_file": "medium"
+  }
 }
 ```
 

@@ -1,4 +1,4 @@
-## 3. 最小架构
+## 3. 最小架构与核心心智模型
 
 ```mermaid
 flowchart TD
@@ -14,4 +14,16 @@ flowchart TD
   J --> K["Execute Tool"]
   K --> L["Append tool_result"]
   L --> C
+```
+
+### 3.2 核心心智模型
+
+```mermaid
+flowchart LR
+  A["Tool Object in Runtime"] --> B["Tool Schema in Model Request"]
+  B --> C["Model emits tool_use"]
+  C --> D["Runtime finds Tool Object"]
+  D --> E["Tool.call()"]
+  E --> F["tool_result as user message"]
+  F --> G["Model continues reasoning"]
 ```

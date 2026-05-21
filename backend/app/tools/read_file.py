@@ -28,6 +28,7 @@ def _is_denied(path: Path) -> bool:
 class ReadFileTool:
     name = "read_file"
     description = "Read a UTF-8 text file from the project directory."
+    risk_level = "medium"
     input_schema = {
         "type": "object",
         "properties": {

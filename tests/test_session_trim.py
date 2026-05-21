@@ -1,5 +1,5 @@
-from app.agent.messages import Message
-from app.agent.session_store import get_or_create_session, reset_sessions, trim_session_messages
+from app.runtime.messages import Message
+from app.memory.session_store import get_or_create_session, reset_sessions, trim_session_messages
 
 
 def test_trim_session_keeps_system_and_tail() -> None:

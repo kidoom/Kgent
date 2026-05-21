@@ -1,10 +1,6 @@
-"""Backward-compatible re-exports.
+"""Pluggable model client package."""
 
-All implementations live in app.agent.model.* — this module re-exports
-them so existing ``from app.agent.model_client import ...`` keeps working.
-"""
-
-from app.agent.model.base import (
+from app.model.base import (
     ModelClient,
     ModelClientError,
     ModelClientProtocol,
@@ -12,8 +8,8 @@ from app.agent.model.base import (
     build_model_client,
     register_model_client,
 )
-from app.agent.model.heuristic import HeuristicModelClient
-from app.agent.model.openai import OpenAIModelClient
+from app.model.heuristic import HeuristicModelClient
+from app.model.openai import OpenAIModelClient
 
 __all__ = [
     "ModelClient",

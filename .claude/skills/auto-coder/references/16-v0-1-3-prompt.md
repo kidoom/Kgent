@@ -1,4 +1,4 @@
-## 16. 工程加固与 Prompt 对齐（V0.1.3）
+## 16. V0.1.3 — Prompt 对齐与工程加固
 
 > **版本状态：已完成（2026-05-19）** — P0/P1 项已落地 Kgent 仓库。
 
@@ -10,8 +10,8 @@
 
 | ID | 任务 | 状态 | 说明 |
 | --- | --- | --- | --- |
-| P0-1 | 更新 `SYSTEM_PROMPT` | [x] | `backend/app/agent/prompts.py` |
-| P0-2 | 删除未使用的 `infer_project_root()` | [x] | `backend/app/agent/loop.py` |
+| P0-1 | 更新 `SYSTEM_PROMPT` | [x] | `backend/app/runtime/prompts.py` |
+| P0-2 | 删除未使用的 `infer_project_root()` | [x] | `backend/app/runtime/loop.py` |
 
 **Prompt 记录要点（`prompts.py`）：**
 
@@ -26,7 +26,7 @@
 | ID | 任务 | 状态 | 实现位置 |
 | --- | --- | --- | --- |
 | P1-1 | FastAPI `lifespan` 复用 model client | [x] | `backend/app/main.py`, `api/chat.py` |
-| P1-2 | `AgentStep` 按 `type` 字段校验 | [x] | `backend/app/agent/messages.py` |
+| P1-2 | `AgentStep` 按 `type` 字段校验 | [x] | `backend/app/runtime/messages.py` |
 | P1-3 | Session 消息数上限与截断 | [x] | `session_store.py`, `loop.py`, `core/config.py` |
 
 **P1-1 lifespan：**

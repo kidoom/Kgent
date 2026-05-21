@@ -8,8 +8,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from app.agent.messages import Message, ModelResponse, ToolResultBlock, ToolUseBlock
-from app.agent.model.base import ModelClientError, register_model_client
+from app.runtime.messages import Message, ModelResponse, ToolResultBlock, ToolUseBlock
+from app.model.base import ModelClientError, register_model_client
 
 
 @register_model_client("openai")

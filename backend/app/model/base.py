@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
 
-from app.agent.messages import Message, ModelResponse
+from app.runtime.messages import Message, ModelResponse
 
 
 # ---------------------------------------------------------------------------

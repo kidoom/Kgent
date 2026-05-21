@@ -1,4 +1,4 @@
-## 14. 短期记忆机制开发计划
+## 14. V0.1.1 — 短期记忆 Session Store
 
 > **版本状态：V0.1.1 已完成（2026-05-19）** — Kgent 仓库已实现进程内短期 session，14 项 pytest 通过。
 
@@ -156,16 +156,16 @@ Expected:
 
 | ID | 任务 | 状态 | 实现位置 | 验证 |
 | --- | --- | --- | --- | --- |
-| V0.1.1-1 | 进程内 `SESSIONS` 与 `get_or_create_session()` | [x] | `backend/app/agent/session_store.py` | `reset_sessions()` + `tests/conftest.py` |
-| V0.1.1-2 | `run_agent(..., session_id)` 复用历史 messages | [x] | `backend/app/agent/loop.py` | `tests/test_agent_loop.py`（既有用例仍通过） |
-| V0.1.1-3 | `AgentResult.session_id` / `message_count` | [x] | `backend/app/agent/messages.py` | `tests/test_session_memory.py` |
+| V0.1.1-1 | 进程内 `SESSIONS` 与 `get_or_create_session()` | [x] | `backend/app/memory/session_store.py` | `reset_sessions()` + `tests/conftest.py` |
+| V0.1.1-2 | `run_agent(..., session_id)` 复用历史 messages | [x] | `backend/app/runtime/loop.py` | `tests/test_agent_loop.py`（既有用例仍通过） |
+| V0.1.1-3 | `AgentResult.session_id` / `message_count` | [x] | `backend/app/runtime/messages.py` | `tests/test_session_memory.py` |
 | V0.1.1-4 | `POST /api/chat` 请求/响应 `session_id` | [x] | `backend/app/api/chat.py` | `test_chat_api_session_fields` |
 | V0.1.1-5 | 验收场景 1：同 session 记住姓名 | [x] | `heuristic` 会话召回 + session store | `test_same_session_remembers_name` |
 | V0.1.1-6 | 验收场景 2：不同 session 隔离 | [x] | session store 按 key 隔离 | `test_different_sessions_are_isolated` |
 | V0.1.1-7 | 验收场景 3：tool_result 进入后续轮次 | [x] | messages 历史保留 tool_result | `test_tool_results_persist_in_session` |
-| V0.1.1-8 | debug_cli 交互模式复用 session | [x] | `backend/app/debug_cli.py`（`--session-id`、`/reset`） | `tests/test_debug_cli.py` |
+| V0.1.1-8 | debug_cli 交互模式复用 session | [x] | `backend/app/cli/debug.py`（`--session-id`、`/reset`） | `tests/test_debug_cli.py` |
 
-**未纳入 V0.1.1（见 14.3）**
+**未纳入 V0.1.1（见 §14.3）**
 
 | ID | 任务 | 状态 |
 | --- | --- | --- |
@@ -179,5 +179,5 @@ Expected:
 
 ```bash
 .venv\Scripts\python.exe -m pytest -q
-# 22 passed
+# 41 passed（含 V0.2）
 ```

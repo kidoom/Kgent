@@ -1,7 +1,7 @@
 """In-process short-term session memory (V0.1.1)."""
 
-from app.agent.messages import Message
-from app.agent.prompts import SYSTEM_PROMPT
+from app.runtime.messages import Message
+from app.runtime.prompts import SYSTEM_PROMPT
 
 SESSIONS: dict[str, list[Message]] = {}
 

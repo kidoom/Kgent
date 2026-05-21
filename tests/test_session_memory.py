@@ -3,8 +3,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app.agent.loop import run_agent
-from app.agent.model_client import HeuristicModelClient
+from app.runtime.loop import run_agent
+from app.model_client import HeuristicModelClient
 from app.core.config import reload_settings
 from app.main import app
 from app.tools.registry import build_tools

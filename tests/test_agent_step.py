@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.agent.messages import AgentStep
+from app.runtime.messages import AgentStep
 
 
 def test_agent_step_serialization_roundtrip() -> None:
@@ -34,4 +34,33 @@ def test_agent_step_observe_requires_content() -> None:
             turn_index=0,
             tool_use_id="toolu_1",
             tool_name="calculator",
+        )
+
+
+def test_agent_step_decision_allowed_on_call_step() -> None:
+    step = AgentStep(
+        type="call",
+        turn_index=1,
+        tool_use_id="toolu_x",
+        tool_name="calculator",
+        tool_input={"expression": "1+1"},
+        decision="deny",
+    )
+    assert step.decision == "deny"
+
+
+def test_agent_step_decision_rejected_on_non_call_step() -> None:
+    with pytest.raises(ValidationError):
+        AgentStep(type="think", turn_index=0, content="planning", decision="allow")
+
+
+def test_agent_step_decision_invalid_value() -> None:
+    with pytest.raises(ValidationError):
+        AgentStep(
+            type="call",
+            turn_index=0,
+            tool_use_id="toolu_x",
+            tool_name="calculator",
+            tool_input={},
+            decision="maybe",  # type: ignore[arg-type]
         )

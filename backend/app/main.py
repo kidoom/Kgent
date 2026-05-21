@@ -5,9 +5,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.agent.model_client import ModelClientError, ModelClientProtocol, build_model_client
-from app.api.chat import router as chat_router
+from app.model_client import ModelClientError, ModelClientProtocol, build_model_client
+from app.api.chat import resolve_api_permission_mode, router as chat_router
+from app.api.runtime import router as runtime_router
+from app.runtime.run_manager import RunManager
 from app.core.config import get_settings
+from app.tools.registry import build_tools
 
 
 @asynccontextmanager
@@ -19,9 +22,12 @@ async def lifespan(app: FastAPI):
     except ModelClientError:
         model_client = None
     app.state.model_client = model_client
+    app.state.run_manager = RunManager()
     yield
     if model_client is not None and hasattr(model_client, "close"):
         await model_client.close()
+    run_manager: RunManager = app.state.run_manager
+    run_manager.reset()
 
 
 settings = get_settings()
@@ -39,15 +45,24 @@ app.add_middleware(
 
 @app.get("/health")
 async def health() -> dict[str, object]:
-    from app.agent.model_client import available_providers
+    from app.model_client import available_providers
 
     current = get_settings()
+    effective_mode = resolve_api_permission_mode(current.permission_mode)
+    tool_risks = {
+        tool.name: getattr(tool, "risk_level", "high")
+        for tool in build_tools(current.project_root)
+    }
     return {
         "status": "ok",
         "provider": current.provider,
         "available_providers": available_providers(),
         "model_client_ready": getattr(app.state, "model_client", None) is not None,
+        "permission_mode": current.permission_mode,
+        "effective_permission_mode": effective_mode,
+        "tool_risks": tool_risks,
     }
 
 
 app.include_router(chat_router)
+app.include_router(runtime_router)

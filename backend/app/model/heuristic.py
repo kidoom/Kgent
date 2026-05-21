@@ -6,9 +6,9 @@ import re
 import uuid
 from typing import Any
 
-from app.agent.messages import Message, ModelResponse, ToolResultBlock, ToolUseBlock
-from app.agent.model.base import register_model_client
-from app.agent.prompts import PLAN_TURN_USER_PROMPT
+from app.runtime.messages import Message, ModelResponse, ToolResultBlock, ToolUseBlock
+from app.model.base import register_model_client
+from app.runtime.prompts import PLAN_TURN_USER_PROMPT
 
 
 @register_model_client("heuristic")

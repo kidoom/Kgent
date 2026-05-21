@@ -21,6 +21,7 @@ _ENV_MAP = {
     "KGENT_PROJECT_ROOT": "project_root",
     "KGENT_CORS_ORIGINS": "cors_origins",
     "KGENT_MAX_SESSION_MESSAGES": "max_session_messages",
+    "KGENT_PERMISSION_MODE": "permission_mode",
 }
 
 _DEFAULTS = {
@@ -32,7 +33,10 @@ _DEFAULTS = {
     "project_root": ".",
     "cors_origins": "http://localhost:3000,http://localhost:5173",
     "max_session_messages": 100,
+    "permission_mode": "risk_based",
 }
+
+_VALID_PERMISSION_MODES = ("allow_all", "risk_based", "interactive")
 
 
 def find_repo_root() -> Path:
@@ -87,6 +91,7 @@ class Settings:
     project_root: Path = Path.cwd()
     cors_origins: str = "http://localhost:3000,http://localhost:5173"
     max_session_messages: int = 100
+    permission_mode: str = "risk_based"
     dotenv_file: Path | None = None
 
     @property
@@ -149,6 +154,9 @@ def _build_settings(dotenv_first: bool) -> Settings:
         max_session_messages = _DEFAULTS["max_session_messages"]
     max_session_messages = min(max(max_session_messages, 4), 500)
 
+    raw_mode = _get("permission_mode").strip().lower().replace("-", "_")
+    permission_mode = raw_mode if raw_mode in _VALID_PERMISSION_MODES else _DEFAULTS["permission_mode"]
+
     return Settings(
         provider=provider,
         model=model,
@@ -158,6 +166,7 @@ def _build_settings(dotenv_first: bool) -> Settings:
         project_root=_resolve_project_root(_get("project_root")),
         cors_origins=cors_origins,
         max_session_messages=max_session_messages,
+        permission_mode=permission_mode,
         dotenv_file=env_path if env_path.exists() else None,
     )
 

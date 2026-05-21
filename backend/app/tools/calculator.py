@@ -8,6 +8,7 @@ from typing import Any
 class CalculatorTool:
     name = "calculator"
     description = "Evaluate a simple arithmetic expression. Supports +, -, *, /, //, %, **, and parentheses."
+    risk_level = "low"
     input_schema = {
         "type": "object",
         "properties": {

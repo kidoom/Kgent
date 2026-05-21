@@ -3,9 +3,10 @@
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app.agent.loop import run_agent
-from app.agent.messages import AgentStep
-from app.agent.model_client import ModelClientError, ModelClientProtocol, build_model_client
+from app.runtime.loop import run_agent
+from app.runtime.messages import AgentStep
+from app.model_client import ModelClientError, ModelClientProtocol, build_model_client
+from app.runtime.permissions import AllowAllPolicy, RiskBasedPolicy, PermissionPolicy
 from app.core.config import get_settings
 from app.tools.registry import build_tools
 
@@ -35,6 +36,24 @@ def _resolve_model_client(
     return build_model_client(provider, **model_kwargs), True
 
 
+def build_api_policy(permission_mode: str) -> PermissionPolicy:
+    """Construct the policy used for HTTP requests.
+
+    Interactive mode is forcibly downgraded to `risk_based` here because the
+    API has no way to prompt the user without blocking the HTTP request.
+    """
+    if permission_mode == "allow_all":
+        return AllowAllPolicy()
+    return RiskBasedPolicy()
+
+
+def resolve_api_permission_mode(permission_mode: str) -> str:
+    """Effective mode applied on the API side (interactive -> risk_based)."""
+    if permission_mode == "allow_all":
+        return "allow_all"
+    return "risk_based"
+
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat(request: Request, body: ChatRequest) -> ChatResponse:
     settings = get_settings()
@@ -45,6 +64,8 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
     except ModelClientError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
+    policy = build_api_policy(settings.permission_mode)
+
     try:
         result = await run_agent(
             user_input=body.message,
@@ -53,6 +74,7 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
             max_steps=settings.max_steps,
             session_id=body.session_id,
             max_session_messages=settings.max_session_messages,
+            policy=policy,
         )
     except ModelClientError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc

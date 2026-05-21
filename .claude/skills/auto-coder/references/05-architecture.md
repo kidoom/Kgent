@@ -21,6 +21,7 @@ class ToolResultBlock(BaseModel):
 class Message(BaseModel):
     role: Literal["system", "user", "assistant"]
     content: str | list[ToolUseBlock] | list[ToolResultBlock]
+    assistant_text: str | None = None  # 可见计划文字（与 tool_use 并存时，OpenAI 回放用）
 ```
 
 `tool_use` 由 assistant 产生：
