@@ -19,7 +19,7 @@ Tool behavior:
 Finish when the user request is satisfied and no further tools are required.
 """
 
-# Used only by debug CLI (plan_before_act=True), not by POST /api/chat.
+# Used only by debug CLI (plan_before_act=True).
 PLAN_TURN_USER_PROMPT = (
     "[Kgent 运行态] 根据当前对话与已有 tool_result，用 1～4 句话说明："
     "你掌握了哪些信息、下一步打算做什么。本步禁止调用工具，仅输出自然语言。"

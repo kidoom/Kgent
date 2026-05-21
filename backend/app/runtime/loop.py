@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Callable
+from typing import Any
 
 from app.runtime.host import AgentHost, CollectingHost, build_permission_request, make_run_started_event
 from app.runtime.messages import (
@@ -20,6 +21,7 @@ from app.runtime.permissions import AllowAllPolicy, PermissionPolicy
 from app.runtime.prompts import PLAN_TURN_USER_PROMPT
 from app.runtime.protocol import (
     agent_step_event,
+    loop_checkpoint_event,
     run_finished_event,
     tool_call_started_event,
     AgentEvent,
@@ -55,6 +57,39 @@ def _emit_trace(
 ) -> None:
     if on_trace is not None:
         on_trace(event, turn_index, messages, added_steps or [])
+
+
+async def _emit_loop_trace(
+    *,
+    host: AgentHost | None,
+    seq_counter: list[int] | None,
+    run_id: str,
+    session_id: str,
+    on_trace: AgentTraceCallback | None,
+    checkpoint: str,
+    turn_index: int,
+    messages: list[Message],
+    added_steps: list[AgentStep] | None = None,
+    tool_count: int | None = None,
+    tool_schemas: list[dict[str, Any]] | None = None,
+) -> None:
+    _emit_trace(on_trace, checkpoint, turn_index, messages, added_steps)
+    if host is None or seq_counter is None:
+        return
+    seq_counter[0] += 1
+    await host.emit(
+        loop_checkpoint_event(
+            run_id=run_id,
+            session_id=session_id,
+            seq=seq_counter[0],
+            checkpoint=checkpoint,
+            turn_index=turn_index,
+            messages=messages,
+            added_steps=added_steps,
+            tool_count=tool_count,
+            tool_schemas=tool_schemas,
+        )
+    )
 
 
 class RunCancelledError(Exception):
@@ -193,7 +228,16 @@ async def run_agent_stream(
     messages.append(Message(role="user", content=message))
     if max_session_messages is not None:
         trim_session_messages(messages, max_session_messages)
-    _emit_trace(on_trace, "after_user_append", -1, messages)
+    await _emit_loop_trace(
+        host=host,
+        seq_counter=seq_counter,
+        run_id=run_id,
+        session_id=session_id,
+        on_trace=on_trace,
+        checkpoint="after_user_append",
+        turn_index=-1,
+        messages=messages,
+    )
 
     steps: list[AgentStep] = []
     tool_schemas = build_tool_schemas(tools)
@@ -203,11 +247,32 @@ async def run_agent_stream(
             if await host.check_cancelled():
                 raise RunCancelledError()
 
-            _emit_trace(on_trace, "turn_begin", turn_index, messages)
+            await _emit_loop_trace(
+                host=host,
+                seq_counter=seq_counter,
+                run_id=run_id,
+                session_id=session_id,
+                on_trace=on_trace,
+                checkpoint="turn_begin",
+                turn_index=turn_index,
+                messages=messages,
+            )
             if max_session_messages is not None:
                 trim_session_messages(messages, max_session_messages)
 
             if plan_before_act:
+                plan_messages = [*messages, Message(role="user", content=PLAN_TURN_USER_PROMPT)]
+                await _emit_loop_trace(
+                    host=host,
+                    seq_counter=seq_counter,
+                    run_id=run_id,
+                    session_id=session_id,
+                    on_trace=on_trace,
+                    checkpoint="before_plan_call",
+                    turn_index=turn_index,
+                    messages=plan_messages,
+                    tool_count=0,
+                )
                 think_step = await _run_plan_phase(model_client, messages, turn_index)
                 steps.append(think_step)
                 seq_counter[0] += 1
@@ -218,10 +283,41 @@ async def run_agent_stream(
                     seq=seq_counter[0],
                     step=think_step,
                 )
-                _emit_trace(on_trace, "after_plan", turn_index, messages, [think_step])
+                await _emit_loop_trace(
+                    host=host,
+                    seq_counter=seq_counter,
+                    run_id=run_id,
+                    session_id=session_id,
+                    on_trace=on_trace,
+                    checkpoint="after_plan",
+                    turn_index=turn_index,
+                    messages=messages,
+                    added_steps=[think_step],
+                )
+                await _emit_loop_trace(
+                    host=host,
+                    seq_counter=seq_counter,
+                    run_id=run_id,
+                    session_id=session_id,
+                    on_trace=on_trace,
+                    checkpoint="before_model_call",
+                    turn_index=turn_index,
+                    messages=messages,
+                    tool_count=len(tool_schemas),
+                    tool_schemas=tool_schemas,
+                )
                 response = await model_client.call_model(messages=messages, tools=tool_schemas)
                 messages.append(response.assistant_message)
-                _emit_trace(on_trace, "after_act", turn_index, messages)
+                await _emit_loop_trace(
+                    host=host,
+                    seq_counter=seq_counter,
+                    run_id=run_id,
+                    session_id=session_id,
+                    on_trace=on_trace,
+                    checkpoint="after_act",
+                    turn_index=turn_index,
+                    messages=messages,
+                )
             else:
                 response = await _run_standard_turn(
                     model_client,
@@ -254,7 +350,17 @@ async def run_agent_stream(
                     seq=seq_counter[0],
                     step=final_step,
                 )
-                _emit_trace(on_trace, "complete", turn_index, messages, [final_step])
+                await _emit_loop_trace(
+                    host=host,
+                    seq_counter=seq_counter,
+                    run_id=run_id,
+                    session_id=session_id,
+                    on_trace=on_trace,
+                    checkpoint="complete",
+                    turn_index=turn_index,
+                    messages=messages,
+                    added_steps=[final_step],
+                )
                 result = AgentResult(
                     answer=response.text,
                     steps=steps,
@@ -300,12 +406,16 @@ async def run_agent_stream(
                 )
 
                 if decision_action != "allow":
-                    _emit_trace(
-                        on_trace,
-                        "after_permission",
-                        turn_index,
-                        messages,
-                        [call_step],
+                    await _emit_loop_trace(
+                        host=host,
+                        seq_counter=seq_counter,
+                        run_id=run_id,
+                        session_id=session_id,
+                        on_trace=on_trace,
+                        checkpoint="after_permission",
+                        turn_index=turn_index,
+                        messages=messages,
+                        added_steps=[call_step],
                     )
 
                 if decision_action == "allow":
@@ -350,12 +460,16 @@ async def run_agent_stream(
                         ],
                     )
                 )
-                _emit_trace(
-                    on_trace,
-                    "after_tool",
-                    turn_index,
-                    messages,
-                    [call_step, observe_step],
+                await _emit_loop_trace(
+                    host=host,
+                    seq_counter=seq_counter,
+                    run_id=run_id,
+                    session_id=session_id,
+                    on_trace=on_trace,
+                    checkpoint="after_tool",
+                    turn_index=turn_index,
+                    messages=messages,
+                    added_steps=[call_step, observe_step],
                 )
 
         raise RuntimeError("Agent stopped: max steps reached")
@@ -418,6 +532,18 @@ async def _run_standard_turn(
     session_id: str = "default",
     seq_counter: list[int] | None = None,
 ) -> ModelResponse:
+    await _emit_loop_trace(
+        host=host,
+        seq_counter=seq_counter,
+        run_id=run_id,
+        session_id=session_id,
+        on_trace=on_trace,
+        checkpoint="before_model_call",
+        turn_index=turn_index,
+        messages=messages,
+        tool_count=len(tool_schemas),
+        tool_schemas=tool_schemas,
+    )
     response = await model_client.call_model(messages=messages, tools=tool_schemas)
     messages.append(response.assistant_message)
 
@@ -439,7 +565,17 @@ async def _run_standard_turn(
                 seq=seq_counter[0],
                 step=think_step,
             )
-    _emit_trace(on_trace, "after_model", turn_index, messages, turn_steps)
+    await _emit_loop_trace(
+        host=host,
+        seq_counter=seq_counter,
+        run_id=run_id,
+        session_id=session_id,
+        on_trace=on_trace,
+        checkpoint="after_model",
+        turn_index=turn_index,
+        messages=messages,
+        added_steps=turn_steps,
+    )
 
     if response.tool_uses and not response.text:
         placeholder_think = AgentStep(
@@ -457,7 +593,17 @@ async def _run_standard_turn(
                 seq=seq_counter[0],
                 step=placeholder_think,
             )
-        _emit_trace(on_trace, "after_think_placeholder", turn_index, messages, [placeholder_think])
+        await _emit_loop_trace(
+            host=host,
+            seq_counter=seq_counter,
+            run_id=run_id,
+            session_id=session_id,
+            on_trace=on_trace,
+            checkpoint="after_think_placeholder",
+            turn_index=turn_index,
+            messages=messages,
+            added_steps=[placeholder_think],
+        )
 
     return response
 

@@ -40,7 +40,7 @@ class NullHost:
 
 
 class CollectingHost:
-    """Collects events and steps; used by POST /api/chat compatibility path."""
+    """Collects events and steps; used by run_agent() test/helper wrapper."""
 
     def __init__(
         self,

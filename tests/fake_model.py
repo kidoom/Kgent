@@ -1,4 +1,4 @@
-"""Deterministic local model client — no network, no API key."""
+"""Deterministic fake model client for pytest only (not a production provider)."""
 
 from __future__ import annotations
 
@@ -6,18 +6,14 @@ import re
 import uuid
 from typing import Any
 
-from app.runtime.messages import Message, ModelResponse, ToolResultBlock, ToolUseBlock
 from app.model.base import register_model_client
+from app.runtime.messages import Message, ModelResponse, ToolResultBlock, ToolUseBlock
 from app.runtime.prompts import PLAN_TURN_USER_PROMPT
 
 
-@register_model_client("heuristic")
-class HeuristicModelClient:
-    """Small local stand-in for an LLM that can emit tool_use blocks.
-
-    This is not meant to be smart. It exists so the agent loop can run and
-    be tested without network access or API keys.
-    """
+@register_model_client("fake")
+class FakeModelClient:
+    """Offline stand-in so unit tests do not call DeepSeek."""
 
     def __init__(self, **_extra: Any):
         pass
@@ -57,7 +53,6 @@ class HeuristicModelClient:
             return self._answer_from_tool_result(messages, pending)
 
         user_text = _latest_user_text(messages)
-
         recall_answer = self._answer_from_session_memory(messages, user_text)
         if recall_answer is not None:
             return ModelResponse(
@@ -139,10 +134,6 @@ class HeuristicModelClient:
         return ModelResponse(assistant_message=Message(role="assistant", content=text), text=text)
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
-
 def _is_name_recall_question(text: str) -> bool:
     return any(phrase in text for phrase in ["我叫什么", "我的名字", "我是谁"])
 
@@ -157,7 +148,10 @@ def _extract_introduced_name(messages: list[Message]) -> str | None:
 
 
 def _is_prior_context_question(text: str) -> bool:
-    return any(phrase in text for phrase in ["刚才", "之前", "上一轮", "那个项目"])
+    return any(
+        phrase in text
+        for phrase in ["刚才", "刚刚", "之前", "上一轮", "那个项目", "读的内容", "读到的"]
+    )
 
 
 def _latest_read_file_content(messages: list[Message]) -> str | None:
@@ -203,7 +197,6 @@ def _extract_file_path(text: str) -> str | None:
 
 
 def _pending_tool_result(messages: list[Message]) -> ToolResultBlock | None:
-    """Tool result not yet followed by an act-phase assistant tool_use message."""
     last_index = -1
     last_block: ToolResultBlock | None = None
     for index, message in enumerate(messages):
@@ -216,6 +209,8 @@ def _pending_tool_result(messages: list[Message]) -> ToolResultBlock | None:
     if last_block is None:
         return None
     for message in messages[last_index + 1 :]:
+        if message.role == "user" and isinstance(message.content, str):
+            return None
         if message.role == "assistant" and isinstance(message.content, list):
             return None
     return last_block

@@ -19,19 +19,17 @@ _ENV_MAP = {
     "KGENT_BASE_URL": "base_url",
     "KGENT_MAX_STEPS": "max_steps",
     "KGENT_PROJECT_ROOT": "project_root",
-    "KGENT_CORS_ORIGINS": "cors_origins",
     "KGENT_MAX_SESSION_MESSAGES": "max_session_messages",
     "KGENT_PERMISSION_MODE": "permission_mode",
 }
 
 _DEFAULTS = {
-    "provider": "heuristic",
+    "provider": "openai",
     "model": "deepseek-chat",
     "api_key": "",
     "base_url": "https://api.deepseek.com",
     "max_steps": 8,
     "project_root": ".",
-    "cors_origins": "http://localhost:3000,http://localhost:5173",
     "max_session_messages": 100,
     "permission_mode": "risk_based",
 }
@@ -83,13 +81,12 @@ def _load_dotenv() -> dict[str, str]:
 @dataclass(frozen=True)
 class Settings:
     app_name: str = "Kgent"
-    provider: str = "heuristic"
+    provider: str = "openai"
     model: str = "deepseek-chat"
     api_key: str = ""
     base_url: str = "https://api.deepseek.com"
     max_steps: int = 8
     project_root: Path = Path.cwd()
-    cors_origins: str = "http://localhost:3000,http://localhost:5173"
     max_session_messages: int = 100
     permission_mode: str = "risk_based"
     dotenv_file: Path | None = None
@@ -140,7 +137,6 @@ def _build_settings(dotenv_first: bool) -> Settings:
     model = _get("model")
     api_key = _get("api_key")
     base_url = _get("base_url")
-    cors_origins = _get("cors_origins")
 
     try:
         max_steps = int(_get("max_steps"))
@@ -164,7 +160,6 @@ def _build_settings(dotenv_first: bool) -> Settings:
         base_url=base_url,
         max_steps=max_steps,
         project_root=_resolve_project_root(_get("project_root")),
-        cors_origins=cors_origins,
         max_session_messages=max_session_messages,
         permission_mode=permission_mode,
         dotenv_file=env_path if env_path.exists() else None,
@@ -177,7 +172,7 @@ def _cached_settings(dotenv_first: bool) -> Settings:
 
 
 def get_settings() -> Settings:
-    """API / server: process env overrides .env."""
+    """Default settings: process env overrides .env."""
     return _cached_settings(False)
 
 

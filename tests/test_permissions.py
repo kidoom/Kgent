@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from fastapi.testclient import TestClient
 
 from app.runtime.loop import (
     PERMISSION_DENIED_PREFIX,
@@ -14,7 +13,7 @@ from app.runtime.loop import (
     run_agent,
 )
 from app.runtime.messages import Message, ModelResponse, ToolUseBlock
-from app.model_client import HeuristicModelClient
+from fake_model import FakeModelClient
 from app.runtime.permissions import (
     AllowAllPolicy,
     AskPolicy,
@@ -24,12 +23,6 @@ from app.runtime.permissions import (
     build_policy,
     normalize_mode,
 )
-from app.api.chat import (
-    build_api_policy,
-    resolve_api_permission_mode,
-)
-from app.core.config import reload_settings
-from app.main import app
 from app.tools.base import tool_to_schema
 from app.tools.calculator import CalculatorTool
 from app.tools.list_files import ListFilesTool
@@ -223,7 +216,7 @@ async def test_run_agent_default_policy_is_allow_all(tmp_path: Path) -> None:
 
     result = await run_agent(
         user_input="帮我算一下 12 * 8 + 6",
-        model_client=HeuristicModelClient(),
+        model_client=FakeModelClient(),
         tools=build_tools(tmp_path),
         session_id="t_permissions_default_allow",
     )
@@ -231,39 +224,6 @@ async def test_run_agent_default_policy_is_allow_all(tmp_path: Path) -> None:
     call = next(step for step in result.steps if step.type == "call")
     assert call.decision == "allow"
     assert "102" in result.answer
-
-
-# ---------------------------------------------------------------------------
-# API integration: interactive must be downgraded to risk_based on the HTTP side
-# ---------------------------------------------------------------------------
-
-def test_resolve_api_permission_mode_downgrades_interactive() -> None:
-    assert resolve_api_permission_mode("interactive") == "risk_based"
-    assert resolve_api_permission_mode("risk_based") == "risk_based"
-    assert resolve_api_permission_mode("allow_all") == "allow_all"
-
-
-def test_build_api_policy_never_returns_interactive() -> None:
-    assert isinstance(build_api_policy("interactive"), RiskBasedPolicy)
-    assert isinstance(build_api_policy("risk_based"), RiskBasedPolicy)
-    assert isinstance(build_api_policy("allow_all"), AllowAllPolicy)
-
-
-def test_health_exposes_permission_mode_and_tool_risks(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("KGENT_PROVIDER", "heuristic")
-    monkeypatch.setenv("KGENT_PROJECT_ROOT", str(tmp_path))
-    monkeypatch.setenv("KGENT_PERMISSION_MODE", "interactive")
-    reload_settings()
-
-    client = TestClient(app)
-    response = client.get("/health")
-
-    assert response.status_code == 200
-    data = response.json()
-    assert data["permission_mode"] == "interactive"
-    assert data["effective_permission_mode"] == "risk_based"
-    assert data["tool_risks"]["calculator"] == "low"
-    assert data["tool_risks"]["read_file"] == "medium"
 
 
 def test_permission_decision_pydantic_model() -> None:

@@ -1,33 +1,48 @@
-# Frontend V0.1
+# Kgent Desktop Client
 
-V0.1 only needs a minimal page later:
+Vite + React UI in a standalone **Electron window** (not a browser tab).
+Connects to the Python WebSocket runtime server.
 
-- user input
-- send button
-- final answer
-- agent steps showing `think`, `call`, `observe`, and `final`
+## Development
 
-## Runtime Protocol (V0.2.1)
+**Terminal 1 — backend**
 
-The UI should not call `run_agent()` directly. Connect to the backend runtime
-transport and render events:
-
-```text
-WS /api/runtime
+```bash
+cd backend
+set KGENT_PERMISSION_MODE=interactive
+python -m app.transport.ws_server
 ```
 
-Recommended client flow:
+**Terminal 2 — desktop window**
 
-1. Open a WebSocket to `/api/runtime`.
-2. Send `start_run` with `session_id` and `message`.
-3. Render incoming `agent_step` events as the loop progresses.
-4. When `permission_required` arrives, show an approve/deny UI.
-5. Send `permission_decision` with the returned `run_id` and
-   `permission_request_id`.
-6. Stop on `run_finished`, `run_failed`, or `run_cancelled`.
+```bash
+cd frontend
+npm install
+npm run desktop:dev
+```
 
-`POST /api/chat` remains available for simple one-shot requests, but it cannot
-pause for user approval. Interactive desktop or web clients should use the
-runtime protocol above.
+If Vite is already running, open the window only:
 
-The backend is implemented first so the agent loop is real before UI polish begins.
+```bash
+npm run desktop
+```
+
+## Configuration
+
+WebSocket URL (`.env.development`):
+
+```text
+VITE_WS_URL=ws://127.0.0.1:8765/runtime
+```
+
+## Browser mode (optional)
+
+```bash
+npm run dev:web
+```
+
+Open http://127.0.0.1:5173 in a browser.
+
+## Protocol
+
+See [`backend/app/runtime/protocol.py`](../backend/app/runtime/protocol.py).

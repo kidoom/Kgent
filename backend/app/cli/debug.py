@@ -65,7 +65,7 @@ def main() -> None:
 Examples:
   python -m app.cli.debug
   python -m app.cli.debug --once "帮我算一下 12 * 8 + 6"
-  python -m app.cli.debug --provider heuristic
+  python -m app.cli.debug --once "帮我算一下 12 * 8 + 6"
   python -m app.cli.debug --compact --once "帮我算一下 12 * 8 + 6"
         """.strip(),
     )
@@ -95,9 +95,8 @@ Examples:
     )
     parser.add_argument(
         "--provider",
-        choices=["heuristic", "openai"],
         default=None,
-        help="Override KGENT_PROVIDER (default: read from .env).",
+        help="Override KGENT_PROVIDER (default: read from .env, typically openai/DeepSeek).",
     )
     parser.add_argument(
         "--permission",
@@ -130,7 +129,7 @@ async def _run_interactive(args: argparse.Namespace) -> None:
     print(f"session_id: {args.session_id} (messages persist across turns)")
     print(f"provider: {provider} | model: {settings.model}")
     print(f"permission_mode: {permission_mode}")
-    print("Debug mode: each loop turn runs plan (text-only) then act (tools/final). POST /api/chat uses the standard single-call loop.")
+    print("Debug mode: each loop turn runs plan (text-only) then act (tools/final).")
     if args.compact:
         print("Trace: --compact (steps only, no messages table). Use /history to dump messages.")
     print("Multi-turn REPL — type a message and press Enter. Same API client for the whole session.")
@@ -214,7 +213,14 @@ async def _build_runtime(
         env_file = dotenv_path()
         print(
             "\n[config-error] KGENT_PROVIDER=openai but KGENT_API_KEY is empty. "
-            f"Set it in {env_file} or use --provider heuristic."
+            f"Set it in {env_file} (DeepSeek: KGENT_BASE_URL=https://api.deepseek.com)."
+        )
+        return None
+
+    if provider not in available_providers():
+        print(
+            f"\n[config-error] Unknown provider '{provider}'. "
+            f"Available: {', '.join(available_providers()) or '(none)'}"
         )
         return None
 

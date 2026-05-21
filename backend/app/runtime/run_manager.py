@@ -81,6 +81,9 @@ class RunManager:
     def subscribe(self, run_id: str, subscriber: EventSubscriber) -> None:
         self._subscribers.setdefault(run_id, []).append(subscriber)
 
+    def unsubscribe(self, run_id: str) -> None:
+        self._subscribers.pop(run_id, None)
+
     def _discard_connection_run(self, state: RunState) -> None:
         if not state.connection_id:
             return
@@ -111,10 +114,16 @@ class RunManager:
             state.status = "waiting_permission"
         elif event.type == "permission_resolved" and state.status == "waiting_permission":
             state.status = "running"
-        for subscriber in self._subscribers.get(event.run_id, []):
-            result = subscriber(event)
-            if asyncio.iscoroutine(result):
-                await result
+        subscribers = list(self._subscribers.get(event.run_id, []))
+        for subscriber in subscribers:
+            try:
+                result = subscriber(event)
+                if asyncio.iscoroutine(result):
+                    await result
+            except Exception:
+                continue
+        if event.type in {"run_finished", "run_failed", "run_cancelled"}:
+            self._subscribers.pop(event.run_id, None)
 
     async def wait_for_permission(self, request: PermissionRequest) -> ResolvedPermission:
         state = self._runs.get(request.run_id)
@@ -249,7 +258,7 @@ class RunManager:
 
 
 class RunManagerHost:
-    """Host backed by RunManager for WebSocket / supervised runs."""
+    """Host backed by RunManager for supervised multi-client runs."""
 
     def __init__(self, run_manager: RunManager, run_id: str, session_id: str) -> None:
         self._run_manager = run_manager

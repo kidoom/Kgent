@@ -8,7 +8,6 @@ from app.model.base import (
     build_model_client,
     register_model_client,
 )
-from app.model.heuristic import HeuristicModelClient
 from app.model.openai import OpenAIModelClient
 
 __all__ = [
@@ -18,6 +17,5 @@ __all__ = [
     "build_model_client",
     "register_model_client",
     "available_providers",
-    "HeuristicModelClient",
     "OpenAIModelClient",
 ]

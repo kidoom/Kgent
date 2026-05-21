@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from app.runtime.loop import run_agent
-from app.model_client import HeuristicModelClient
+from fake_model import FakeModelClient
 from app.tools.registry import build_tools
 
 
@@ -11,7 +11,7 @@ from app.tools.registry import build_tools
 async def test_agent_pure_text_think_then_final() -> None:
     result = await run_agent(
         user_input="介绍一下你自己",
-        model_client=HeuristicModelClient(),
+        model_client=FakeModelClient(),
         tools=build_tools(Path.cwd()),
     )
 
@@ -23,7 +23,7 @@ async def test_agent_pure_text_think_then_final() -> None:
 async def test_agent_calculator_tool(tmp_path: Path) -> None:
     result = await run_agent(
         user_input="帮我算一下 12 * 8 + 6",
-        model_client=HeuristicModelClient(),
+        model_client=FakeModelClient(),
         tools=build_tools(tmp_path),
     )
 
@@ -45,7 +45,7 @@ async def test_agent_read_file_tool(tmp_path: Path) -> None:
 
     result = await run_agent(
         user_input="请读取 README.md 并总结这个项目",
-        model_client=HeuristicModelClient(),
+        model_client=FakeModelClient(),
         tools=build_tools(tmp_path),
     )
 
@@ -60,7 +60,7 @@ async def test_agent_read_file_tool(tmp_path: Path) -> None:
 async def test_agent_tool_error_observe(tmp_path: Path) -> None:
     result = await run_agent(
         user_input="请读取 missing.txt 并总结",
-        model_client=HeuristicModelClient(),
+        model_client=FakeModelClient(),
         tools=build_tools(tmp_path),
     )
 

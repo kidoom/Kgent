@@ -8,10 +8,11 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from app.runtime.messages import AgentStep
+from app.runtime.messages import AgentStep, Message, ToolResultBlock, ToolUseBlock
 
 AgentEventType = Literal[
     "run_started",
+    "loop_checkpoint",
     "agent_step",
     "tool_call_started",
     "permission_required",
@@ -93,6 +94,55 @@ class CancelRunCommand(BaseModel):
 
 
 RuntimeCommand = StartRunCommand | PermissionDecisionCommand | CancelRunCommand
+
+
+def serialize_message_for_debug(message: Message) -> dict[str, Any]:
+    """JSON-safe message snapshot for frontend loop debug panels."""
+    if isinstance(message.content, str):
+        content: Any = message.content
+    else:
+        content = [
+            block.model_dump(mode="json")
+            for block in message.content
+            if isinstance(block, (ToolUseBlock, ToolResultBlock))
+        ]
+    payload: dict[str, Any] = {"role": message.role, "content": content}
+    if message.assistant_text:
+        payload["assistant_text"] = message.assistant_text
+    return payload
+
+
+def loop_checkpoint_event(
+    *,
+    run_id: str,
+    session_id: str,
+    seq: int,
+    checkpoint: str,
+    turn_index: int,
+    messages: list[Message],
+    added_steps: list[AgentStep] | None = None,
+    tool_count: int | None = None,
+    tool_schemas: list[dict[str, Any]] | None = None,
+) -> AgentEvent:
+    payload: dict[str, Any] = {
+        "checkpoint": checkpoint,
+        "turn_index": turn_index,
+        "message_count": len(messages),
+        "messages": [serialize_message_for_debug(message) for message in messages],
+    }
+    if added_steps:
+        payload["added_steps"] = [step.model_dump(mode="json") for step in added_steps]
+    if tool_count is not None:
+        payload["tool_count"] = tool_count
+    if tool_schemas is not None:
+        payload["tool_schemas"] = tool_schemas
+    return AgentEvent(
+        type="loop_checkpoint",
+        run_id=run_id,
+        session_id=session_id,
+        seq=seq,
+        payload=payload,
+    )
 
 
 def agent_step_event(
