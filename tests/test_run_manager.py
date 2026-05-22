@@ -6,8 +6,31 @@ import asyncio
 
 import pytest
 
-from app.runtime.protocol import PermissionRequest, ResolvedPermission, permission_required_event
-from app.runtime.run_manager import RunManager
+from app.runtime.protocol import AgentEvent, PermissionRequest, ResolvedPermission, permission_required_event
+from app.runtime.run_manager import (
+    DEFAULT_SESSION_EVENT_MAX,
+    RunManager,
+    _parse_session_event_max,
+)
+
+
+def test_parse_session_event_max_defaults() -> None:
+    assert _parse_session_event_max(None) == DEFAULT_SESSION_EVENT_MAX
+    assert _parse_session_event_max("") == DEFAULT_SESSION_EVENT_MAX
+    assert _parse_session_event_max("   ") == DEFAULT_SESSION_EVENT_MAX
+    assert _parse_session_event_max("not-a-number") == DEFAULT_SESSION_EVENT_MAX
+
+
+def test_parse_session_event_max_clamps_minimum() -> None:
+    assert _parse_session_event_max("3") == 50
+    assert _parse_session_event_max("100") == 100
+
+
+@pytest.mark.parametrize("raw", ["", "abc", "  "])
+def test_run_manager_invalid_session_event_max_env(monkeypatch, raw: str) -> None:
+    monkeypatch.setenv("KGENT_SESSION_EVENT_MAX", raw)
+    manager = RunManager()
+    assert manager._session_event_max == DEFAULT_SESSION_EVENT_MAX
 
 
 def _make_request(run_id: str, perm_id: str = "perm_1") -> PermissionRequest:
@@ -167,6 +190,50 @@ async def test_wait_for_permission_registers_pending_before_emit() -> None:
 
     assert result.action == "allow"
     assert seen_pending is True
+
+
+@pytest.mark.asyncio
+async def test_session_event_history_is_trimmed(monkeypatch) -> None:
+    monkeypatch.setenv("KGENT_SESSION_EVENT_MAX", "3")
+    manager = RunManager()
+    manager._session_event_max = 3
+    run_id = manager.create_run(session_id="trim")
+    for index in range(5):
+        await manager.publish_session_event(
+            AgentEvent(
+                type="agent_step",
+                run_id=run_id,
+                session_id="trim",
+                seq=index,
+                payload={"index": index},
+            )
+        )
+    history = manager.get_session_events_after("trim", 0)
+    assert len(history) == 3
+    assert history[0].payload["index"] == 2
+
+
+@pytest.mark.asyncio
+async def test_loop_checkpoint_stored_without_messages_in_history() -> None:
+    from app.runtime.protocol import loop_checkpoint_event
+    from app.runtime.messages import Message
+
+    manager = RunManager()
+    run_id = manager.create_run(session_id="slim")
+    event = loop_checkpoint_event(
+        run_id=run_id,
+        session_id="slim",
+        seq=1,
+        checkpoint="before_model_call",
+        turn_index=0,
+        messages=[Message(role="user", content="hello")],
+        tool_schemas=[{"name": "calculator"}],
+    )
+    await manager.publish_session_event(event)
+    stored = manager.get_session_events_after("slim", 0)[0]
+    assert "messages" not in stored.payload
+    assert "tool_schemas" not in stored.payload
+    assert stored.payload["checkpoint"] == "before_model_call"
 
 
 @pytest.mark.asyncio

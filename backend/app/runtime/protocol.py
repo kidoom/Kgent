@@ -22,6 +22,7 @@ AgentEventType = Literal[
     "run_failed",
     "run_cancelled",
     "error",
+    "heartbeat",
 ]
 
 RunStatus = Literal[
@@ -254,4 +255,14 @@ def error_event(
         session_id=session_id,
         seq=seq,
         payload={"error": error},
+    )
+
+
+def heartbeat_event(*, session_id: str, seq: int) -> AgentEvent:
+    return AgentEvent(
+        type="heartbeat",
+        run_id="",
+        session_id=session_id,
+        seq=seq,
+        payload={},
     )

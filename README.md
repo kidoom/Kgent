@@ -13,7 +13,8 @@ can be used as a learning project and as a base for future agent features.
 
 ```text
 backend/app/
-  transport/        WebSocket runtime server (websockets library)
+  main.py           FastAPI/ASGI entry (HTTP + SSE)
+  api/              HTTP command routes + SSE event stream
   cli/              local debug CLI entrypoints
   core/             environment-based application settings
   memory/           in-process session memory
@@ -24,7 +25,7 @@ backend/app/
   debug_cli.py      legacy CLI wrapper for app.cli.debug
 
 frontend/           Electron desktop client (Vite + React)
-tests/              pytest suite for loop, tools, memory, permissions, WS transport
+tests/              pytest suite for loop, tools, memory, permissions, HTTP runtime
 scripts/            small project maintenance scripts
 ```
 
@@ -44,20 +45,42 @@ python -m app.cli.debug --once "calculate 12 * 8 + 6"
 
 ```bash
 cd backend
-set KGENT_PERMISSION_MODE=interactive
-python -m app.transport.ws_server
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-**Terminal 2 — desktop window**
+Or from repo root (reads `.env`, including optional TLS):
+
+```bash
+python scripts/run_server.py
+```
+
+**HTTPS（开发/生产任选其一）**
+
+```bash
+# 方式 A：scripts/run_server.py（读取 .env 中的 KGENT_SSL_KEYFILE / KGENT_SSL_CERTFILE）
+python scripts/run_server.py
+
+# 方式 B：uvicorn 直接 TLS（需证书）
+uvicorn app.main:app --host 0.0.0.0 --port 8443 \
+  --ssl-keyfile ./certs/key.pem --ssl-certfile ./certs/cert.pem
+
+# 方式 C：生产推荐 —— Caddy / nginx 终止 TLS，反代到本地 HTTP :8000
+```
+
+- HTTP API（开发）：`http://127.0.0.1:8000`
+- HTTPS API（示例）：`https://127.0.0.1:8443`
+- SSE events：`GET /api/sessions/{session_id}/events`
+- Health：`GET /health`
+
+Vite dev server 通过 proxy 把 `/api`、`/health` 转发到后端；前端默认**不设置** `VITE_API_BASE`，使用同源相对路径。
+
+**Terminal 2 — frontend**
 
 ```bash
 cd frontend
 npm install
-npm run desktop:dev
+npm run dev
 ```
-
-- WebSocket: `ws://127.0.0.1:8765/runtime`
-- Health: `http://127.0.0.1:8765/health`
 
 See [`frontend/README.md`](frontend/README.md). For backend-only debugging, use Debug CLI below.
 
@@ -87,7 +110,7 @@ Set `KGENT_PROVIDER=openai` and `KGENT_API_KEY` for DeepSeek or other OpenAI-com
 ```text
 KGENT_PERMISSION_MODE=risk_based   # low/medium auto-approve, high denied
 KGENT_PERMISSION_MODE=allow_all
-KGENT_PERMISSION_MODE=interactive  # WebSocket / CLI: medium/high require approval
+KGENT_PERMISSION_MODE=interactive  # HTTP / CLI: medium/high require approval
 ```
 
 When a tool is denied, the loop feeds a synthetic `permission_denied` tool_result

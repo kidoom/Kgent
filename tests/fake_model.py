@@ -100,6 +100,15 @@ class FakeModelClient:
                 input={"expression": expression},
             )
 
+        write_request = _extract_write_request(text)
+        if write_request is not None:
+            path, content = write_request
+            return ToolUseBlock(
+                id=_tool_use_id(),
+                name="write_file",
+                input={"path": path, "content": content},
+            )
+
         file_path = _extract_file_path(text)
         if file_path is not None:
             return ToolUseBlock(
@@ -189,6 +198,17 @@ def _extract_expression(text: str) -> str | None:
     matches = re.findall(r"[0-9][0-9\s+\-*/().%]*[0-9]", text)
     candidates = [match.strip() for match in matches if any(op in match for op in ["+", "-", "*", "/", "%"])]
     return max(candidates, key=len) if candidates else None
+
+
+def _extract_write_request(text: str) -> tuple[str, str] | None:
+    match = re.search(r"write_file\s+path=([^\s]+)\s+content=(.+)", text, re.IGNORECASE | re.DOTALL)
+    if match is None:
+        return None
+    path = match.group(1).strip()
+    content = match.group(2).strip()
+    if not path:
+        return None
+    return path, content
 
 
 def _extract_file_path(text: str) -> str | None:

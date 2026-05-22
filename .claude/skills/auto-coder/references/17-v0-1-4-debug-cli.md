@@ -48,7 +48,7 @@ python -m app.debug_cli --fresh-session    # 启动前清空 SESSIONS
 ### 17.6 仍不在 V0.1.4 范围
 
 - [ ] 流式输出（token 级）
-- [ ] SSE / WebSocket 推送到前端
+- [x] SSE 推送到前端（V0.2.2 HTTP + SSE）
 - [ ] Session 持久化（SQLite / 文件）
 - [ ] 将 `plan_before_act` 默认开启到 API
 

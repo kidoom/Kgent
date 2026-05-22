@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { RuntimeWsClient } from "../lib/wsClient";
+import { RuntimeHttpClient } from "../lib/runtimeClient";
 import {
   applyAgentEvent,
   applyConnectionLoss,
@@ -10,10 +10,9 @@ import {
 } from "../lib/turnReducer";
 import type { ConnectionStatus, RunPhase, TurnState } from "../types/protocol";
 
-const DEFAULT_SESSION = "web-default";
 const RUN_TIMEOUT_MS = 120_000;
 
-export function useRuntimeWs(sessionId: string = DEFAULT_SESSION) {
+export function useRuntimeHttp(sessionId: string) {
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("disconnected");
   const [connectionDetail, setConnectionDetail] = useState<string | null>(null);
   const [turn, setTurn] = useState<TurnState>(() => ({
@@ -26,7 +25,7 @@ export function useRuntimeWs(sessionId: string = DEFAULT_SESSION) {
     error: null,
     pendingPermission: null,
   }));
-  const clientRef = useRef<RuntimeWsClient | null>(null);
+  const clientRef = useRef<RuntimeHttpClient | null>(null);
   const runTrackerRef = useRef(createRunTracker());
   const runTimeoutRef = useRef<number | null>(null);
 
@@ -56,6 +55,9 @@ export function useRuntimeWs(sessionId: string = DEFAULT_SESSION) {
 
   const handleEvent = useCallback(
     (event: Parameters<typeof applyAgentEvent>[1]) => {
+      if (event.type === "heartbeat") {
+        return;
+      }
       try {
         setTurn((prev) => {
           const next = applyAgentEvent(prev, event, runTrackerRef.current);
@@ -87,7 +89,6 @@ export function useRuntimeWs(sessionId: string = DEFAULT_SESSION) {
       setConnectionDetail(detail ?? null);
       if (status === "connected") {
         clearRunTimeout();
-        resetRunTracker(runTrackerRef.current);
       }
       if (status === "disconnected" || status === "error") {
         clearRunTimeout();
@@ -99,18 +100,18 @@ export function useRuntimeWs(sessionId: string = DEFAULT_SESSION) {
   );
 
   useEffect(() => {
-    const client = new RuntimeWsClient(handleEvent, handleStatus);
+    const client = new RuntimeHttpClient(sessionId, handleEvent, handleStatus);
     clientRef.current = client;
-    client.connect();
+    void client.connect();
     return () => {
       clearRunTimeout();
       client.disconnect();
       clientRef.current = null;
     };
-  }, [clearRunTimeout, handleEvent, handleStatus]);
+  }, [clearRunTimeout, handleEvent, handleStatus, sessionId]);
 
   const sendMessage = useCallback(
-    (message: string) => {
+    async (message: string) => {
       const client = clientRef.current;
       if (!client?.connected) {
         throw new Error("Not connected to runtime server");
@@ -119,7 +120,7 @@ export function useRuntimeWs(sessionId: string = DEFAULT_SESSION) {
       setTurn(beginRun(runTrackerRef.current, sessionId));
       armRunTimeout();
       try {
-        client.send({ type: "start_run", session_id: sessionId, message });
+        await client.sendMessage(message);
       } catch (error) {
         clearRunTimeout();
         runTrackerRef.current.activeSerial -= 1;
@@ -135,31 +136,43 @@ export function useRuntimeWs(sessionId: string = DEFAULT_SESSION) {
   );
 
   const resolvePermission = useCallback(
-    (decision: "allow" | "deny") => {
+    async (decision: "allow" | "deny") => {
       const client = clientRef.current;
       const req = turn.pendingPermission;
       const runId = turn.runId;
       if (!client?.connected || !req || !runId) return;
       armRunTimeout();
-      client.send({
-        type: "permission_decision",
-        run_id: runId,
-        permission_request_id: req.permission_request_id,
-        decision,
-      });
+      try {
+        await client.resolvePermission(runId, req.permission_request_id, decision);
+      } catch (error) {
+        clearRunTimeout();
+        setTurn((prev) => ({
+          ...prev,
+          phase: "error",
+          error: error instanceof Error ? error.message : "Failed to submit permission decision",
+        }));
+      }
     },
-    [armRunTimeout, turn.pendingPermission, turn.runId],
+    [armRunTimeout, clearRunTimeout, turn.pendingPermission, turn.runId],
   );
 
-  const cancelRun = useCallback(() => {
+  const cancelRun = useCallback(async () => {
     const client = clientRef.current;
     const runId = turn.runId;
     if (!client?.connected || !runId) return;
-    client.send({ type: "cancel_run", run_id: runId });
+    try {
+      await client.cancelRun(runId);
+    } catch (error) {
+      setTurn((prev) => ({
+        ...prev,
+        phase: "error",
+        error: error instanceof Error ? error.message : "Failed to cancel run",
+      }));
+    }
   }, [turn.runId]);
 
   const reconnect = useCallback(() => {
-    clientRef.current?.connect();
+    void clientRef.current?.connect();
   }, []);
 
   const isBusy = useMemo(

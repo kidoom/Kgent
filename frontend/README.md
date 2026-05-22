@@ -1,7 +1,7 @@
 # Kgent Desktop Client
 
 Vite + React UI in a standalone **Electron window** (not a browser tab).
-Connects to the Python WebSocket runtime server.
+Connects to the Python HTTP + SSE runtime server.
 
 ## Development
 
@@ -10,7 +10,13 @@ Connects to the Python WebSocket runtime server.
 ```bash
 cd backend
 set KGENT_PERMISSION_MODE=interactive
-python -m app.transport.ws_server
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+Or from repo root (reads `.env`, optional TLS):
+
+```bash
+python scripts/run_server.py
 ```
 
 **Terminal 2 — desktop window**
@@ -29,10 +35,18 @@ npm run desktop
 
 ## Configuration
 
-WebSocket URL (`.env.development`):
+API base URL (`.env.development`):
 
 ```text
-VITE_WS_URL=ws://127.0.0.1:8765/runtime
+VITE_API_BASE=
+```
+
+Leave empty to use same-origin relative paths (`/api/...`) via Vite proxy.
+
+Optional fixed session id:
+
+```text
+VITE_SESSION_ID=
 ```
 
 ## Browser mode (optional)
@@ -45,4 +59,4 @@ Open http://127.0.0.1:5173 in a browser.
 
 ## Protocol
 
-See [`backend/app/runtime/protocol.py`](../backend/app/runtime/protocol.py).
+See [`backend/app/runtime/protocol.py`](../backend/app/runtime/protocol.py) and [`docs/API.md`](../docs/API.md).

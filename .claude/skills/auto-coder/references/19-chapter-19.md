@@ -6,85 +6,49 @@ This section records what the current Kgent repository has implemented.
 
 ```text
 backend/app/
-  main.py
-  model_client.py
-  debug_cli.py              # thin wrapper → cli/debug.py
+  main.py                   # FastAPI entry + GET /health
   api/
-    chat.py
-  cli/
-    debug.py
-  core/
-    config.py
-  memory/
-    session_store.py
-  model/
-    base.py
-    heuristic.py
-    openai.py
-  runtime/
-    loop.py
-    messages.py
-    prompts.py
-    permissions.py
+    sessions.py             # POST messages / permission / cancel
+    events.py               # GET SSE event stream
+    runtime_service.py      # background run execution
+    deps.py, schemas.py, errors.py
+  model_client.py
+  debug_cli.py
+  cli/debug.py
+  core/config.py
+  memory/session_store.py
+  model/base.py, openai.py
+  runtime/loop.py, messages.py, prompts.py, permissions.py, protocol.py, host.py, run_manager.py
   tools/
-    base.py
-    registry.py
-    calculator.py
-    list_files.py
-    read_file.py
 
-frontend/
-  README.md
+frontend/src/               # Vite + React (useRuntimeHttp, runtimeClient.ts)
+docs/API.md                 # HTTP + SSE API 文档
+scripts/run_server.py       # optional uvicorn launcher (.env + TLS)
+notebooks/                  # Jupyter walkthrough
 
 tests/
-  conftest.py
-  test_agent_loop.py
-  test_api.py
-  test_tools.py
-  test_session_memory.py
-  test_session_trim.py
-  test_agent_step.py
-  test_debug_cli.py
-  test_permissions.py
+  fake_model.py             # offline FakeModelClient (provider "fake")
+  test_http_runtime.py      # HTTP + SSE integration
+  test_run_manager.py
+  test_runtime_protocol.py
+  ...
 ```
 
 ### 19.2 Implemented Backend Capabilities
 
-- [x] FastAPI app entrypoint in `backend/app/main.py`.
-- [x] Health endpoint: `GET /health`（含 `provider`、`available_providers`、`model_client_ready`）。
-- [x] Chat endpoint: `POST /api/chat`.
-- [x] Pydantic request/response models for chat API.
+- [x] FastAPI HTTP + SSE runtime (`uvicorn app.main:app` or `scripts/run_server.py`).
+- [x] Health probe: `GET /health`.
+- [x] HTTP commands: send message / permission / cancel; SSE pushes `AgentEvent`.
 - [x] Minimal model-tool-model loop in `runtime/loop.py`.
-- [x] Message protocol models in `runtime/messages.py`.
-- [x] Tool protocol and schema projection in `tools/base.py`.
-- [x] Runtime tool registry helpers in `tools/registry.py`.
-- [x] Built-in `calculator` tool.
-- [x] Built-in `list_files` tool.
-- [x] Built-in `read_file` tool.
-- [x] Project-root path guard for file tools.
-- [x] Tool execution errors are returned as `tool_result` blocks instead of crashing the loop.
-- [x] `max_steps` guard in the agent loop.
-- [x] CC-style step trace: `think` / `call` / `observe` / `final` with `turn_index`.
-- [x] `AgentStep` pydantic validation per step type.
-- [x] System prompt aligned with multi-turn session and tool loop (`runtime/prompts.py`).
-- [x] Debug CLI：交互 REPL、`--once`、`--compact`、`on_trace` checkpoint（见 §17）。
-- [x] `run_agent(..., plan_before_act=True)` 仅 debug CLI 使用；API 为单阶段 loop。
-- [x] In-memory short-term session store (`session_id` -> `messages[]`)；无持久化。
-- [x] `session_id` on `POST /api/chat` request and response.
-- [x] Multi-turn context within the same session (including prior tool results).
-- [x] Debug CLI interactive mode reuses the same session.
-- [x] Session message cap via `KGENT_MAX_SESSION_MESSAGES` and `trim_session_messages()`.
-- [x] FastAPI lifespan reuses model client (`app.state.model_client`).
-- [x] Tool `risk_level` metadata (`low` / `medium` / `high`) — runtime-only, not projected to model schema.
-- [x] Permission policies in `runtime/permissions.py`: `AllowAllPolicy`, `RiskBasedPolicy`, `InteractivePolicy` (V0.2).
-- [x] `run_agent(..., policy=...)` decision point before `execute_tool_use`; deny short-circuits with synthetic `permission_denied` tool_result (V0.2).
-- [x] `AgentStep.decision` (`allow` / `deny` / `ask`) on `call` steps (V0.2).
-- [x] `after_permission` trace checkpoint emitted only on non-allow decisions (V0.2).
-- [x] `KGENT_PERMISSION_MODE` env var (`allow_all` / `risk_based` / `interactive`, default `risk_based`).
-- [x] API forcibly downgrades `interactive` to `risk_based` (HTTP cannot block on user prompt).
-- [x] Debug CLI `--permission` flag with `[y/N]` stdin asker for medium/high tools.
-- [x] `GET /health` exposes `permission_mode`, `effective_permission_mode`, and `tool_risks` map.
-- [x] Package layout refactor: `runtime/` + `memory/` + `model/` + `cli/`（移除 `app.agent.*` 兼容层）。
+- [x] Message / Tool / AgentStep 协议。
+- [x] Built-in tools: calculator, list_files, read_file。
+- [x] CC-style step trace: `think` / `call` / `observe` / `final`。
+- [x] In-memory session store（`session_id` → `messages[]`）。
+- [x] Debug CLI（`CLIHost` + checkpoint trace）。
+- [x] Permission policies + `AskPolicy`（HTTP interactive + SSE）。
+- [x] `run_agent_stream()` + `loop_checkpoint`（含 `tool_schemas`）。
+- [x] OpenAI-compatible model client（DeepSeek 等）。
+- [x] **V0.2.3** 已移除 legacy WebSocket transport（`transport/ws_server.py`）。
 
 ### 19.3 Implemented Model Layer
 
@@ -92,13 +56,14 @@ tests/
 - [x] `ModelClientError` for provider/network/parse failures.
 - [x] Pluggable model client registry with `register_model_client()`.
 - [x] Top-level `model_client.py` re-export module for `app.model.*`.
-- [x] Offline deterministic `heuristic` model client.
 - [x] OpenAI-compatible model client using Chat Completions and tool calls.
+- [x] Default provider: `openai`（DeepSeek via `KGENT_BASE_URL`）。
+- [x] pytest offline client: `tests/fake_model.py`（registry name `fake`，非生产）。
 - [x] OpenAI-compatible message/tool conversion helpers.
 - [x] OpenAI client：`tools=[]` 时不传 tools；同时保留 `content` + `tool_calls`。
 - [x] `Message.assistant_text` 用于带 tool 的 assistant 可见计划回放。
 - [x] Invalid model tool-call JSON is wrapped as `ModelClientError`.
-- [x] API maps `ModelClientError` to HTTP 502.
+- [x] HTTP run maps `ModelClientError` to `error` / `run_failed` SSE events.
 
 ### 19.4 Implemented Configuration
 
@@ -120,9 +85,13 @@ KGENT_API_KEY
 KGENT_BASE_URL
 KGENT_MAX_STEPS
 KGENT_PROJECT_ROOT
-KGENT_CORS_ORIGINS
 KGENT_MAX_SESSION_MESSAGES
 KGENT_PERMISSION_MODE
+KGENT_CORS_ORIGINS
+KGENT_SESSION_EVENT_MAX
+KGENT_HOST / KGENT_PORT / KGENT_RELOAD   # scripts/run_server.py
+KGENT_SSL_KEYFILE / KGENT_SSL_CERTFILE   # scripts/run_server.py
+VITE_API_BASE / VITE_SESSION_ID          # frontend
 ```
 
 - [x] `.env` is parsed without mutating `os.environ`.
@@ -136,15 +105,17 @@ KGENT_PERMISSION_MODE
 
 - [x] Tool unit tests for calculator and read-file path traversal.
 - [x] Agent-loop tests for calculator and read-file flows.
-- [x] API test for `/api/chat` calculator flow.
-- [x] API test pins `KGENT_PROVIDER=heuristic` so local real-model config does not affect tests.
+- [x] HTTP + SSE runtime tests（`test_http_runtime.py`）。
+- [x] pytest pins `KGENT_PROVIDER=fake` via `tests/conftest.py`。
 - [x] Short-term session memory tests (`tests/test_session_memory.py`, 4 cases).
 - [x] Per-test session isolation via `tests/conftest.py` (`reset_sessions()`).
 - [x] Debug CLI smoke test (`tests/test_debug_cli.py`).
 - [x] AgentStep validation tests (`tests/test_agent_step.py`).
 - [x] Session trim tests (`tests/test_session_trim.py`).
 - [x] Health endpoint lists registered providers.
-- [x] Permission layer tests (`tests/test_permissions.py`, 14 cases).
+- [x] Permission layer tests (`tests/test_permissions.py`, 15+ cases).
+- [x] **V0.2.1** Runtime protocol tests (`tests/test_runtime_protocol.py`).
+- [x] **V0.2.1** RunManager tests (`tests/test_run_manager.py`).
 
 Current test command:
 
@@ -152,20 +123,13 @@ Current test command:
 .venv\Scripts\python.exe -m pytest -q
 ```
 
-Current result:
-
-```text
-41 passed
-```
-
 ### 19.6 Still Not Implemented
 
-These remain out of scope（详见各版本章节的「不在范围」小节）：
-
-- [ ] Real frontend UI beyond `frontend/README.md`.
-- [ ] Streaming model output.
-- [ ] Streaming tool execution.
-- [ ] HTTP-side asynchronous approval flow (V0.2 implements CLI-only `ask`).
+- [ ] Electron 桌面打包（Web 客户端优先）。
+- [ ] **Token-level** streaming model output（V0.8）。
+- [x] HTTP/SSE runtime approval flow（V0.2.2+）。
+- [x] Vite React Web UI（V0.2.2）。
+- [ ] HTTP/SSE 鉴权（session 目前仅 id 门禁）。
 - [ ] Parallel tool execution.
 - [ ] Dynamic tool loading.
 - [ ] MCP integration.
@@ -175,11 +139,12 @@ These remain out of scope（详见各版本章节的「不在范围」小节）�
 
 ### 19.7 Current Known Risks
 
-- `KGENT_PROVIDER` is free-form; invalid provider may only surface at startup (`model_client_ready: false`) or request time (HTTP 502).
-- Session store is in-process only; restarting the server or exiting debug CLI clears sessions; multi-worker deployments do not share sessions.
+- `KGENT_PROVIDER` invalid → startup `model_client_ready: false` or run-time `error` event.
+- Run state 与 session 均仅进程内存；多 worker 不共享；run 无 TTL 清理。
+- SSE/HTTP 无鉴权：知道 session_id 的客户端可订阅同一事件流。
 - Debug `plan_before_act` doubles model calls per turn (cost/latency); not enabled on API.
 - Session trim drops middle history (keeps system + tail); not a substitute for V0.5 context compression.
-- Canonical spec path: repo `.spec-source` → `D:\claude-code\spec\mini-agent-v0.1\DEV_spec.md` (Kgent 仓库内不再维护副本 `DEV_SPEC.md`).
+- Canonical spec path: repo `.spec-source` → `D:\claude-code\spec\mini-agent-v0.1\DEV_spec.md` (Kgent 仓库内 chapter 文件为 sync 副本，本地已按 V0.2.2 HTTP+SSE 更新)。
 
 一句话总结：
 

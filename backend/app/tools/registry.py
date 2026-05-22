@@ -4,8 +4,10 @@ from pathlib import Path
 
 from app.tools.base import Tool, tool_to_schema
 from app.tools.calculator import CalculatorTool
+from app.tools.edit_file import EditFileTool
 from app.tools.list_files import ListFilesTool
 from app.tools.read_file import ReadFileTool
+from app.tools.write_file import WriteFileTool
 
 
 def build_tools(project_root: Path) -> list[Tool]:
@@ -13,6 +15,8 @@ def build_tools(project_root: Path) -> list[Tool]:
         CalculatorTool(),
         ListFilesTool(project_root=project_root),
         ReadFileTool(project_root=project_root),
+        WriteFileTool(project_root=project_root),
+        EditFileTool(project_root=project_root),
     ]
 
 

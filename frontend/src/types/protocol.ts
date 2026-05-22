@@ -11,7 +11,8 @@ export type AgentEventType =
   | "run_finished"
   | "run_failed"
   | "run_cancelled"
-  | "error";
+  | "error"
+  | "heartbeat";
 
 export type StepType = "think" | "call" | "observe" | "final";
 export type PermissionDecision = "allow" | "deny";

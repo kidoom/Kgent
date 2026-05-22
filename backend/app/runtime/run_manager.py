@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -22,6 +23,19 @@ from app.runtime.protocol import (
 
 EventSubscriber = Callable[[AgentEvent], Awaitable[None] | None]
 ACTIVE_STATUSES: tuple[RunStatus, ...] = ("running", "waiting_permission")
+DEFAULT_SESSION_EVENT_MAX = 500
+MIN_SESSION_EVENT_MAX = 50
+
+
+def _parse_session_event_max(raw: str | None) -> int:
+    """Parse KGENT_SESSION_EVENT_MAX; invalid or empty values fall back to default."""
+    if raw is None or not str(raw).strip():
+        return DEFAULT_SESSION_EVENT_MAX
+    try:
+        value = int(str(raw).strip())
+    except ValueError:
+        return DEFAULT_SESSION_EVENT_MAX
+    return max(value, MIN_SESSION_EVENT_MAX)
 
 
 class RunManagerError(Exception):
@@ -53,6 +67,98 @@ class RunManager:
         self._runs: dict[str, RunState] = {}
         self._connection_runs: dict[str, set[str]] = {}
         self._subscribers: dict[str, list[EventSubscriber]] = {}
+        self._session_active_run: dict[str, str] = {}
+        self._session_events: dict[str, list[AgentEvent]] = {}
+        self._session_seq: dict[str, int] = {}
+        self._session_subscribers: dict[str, list[EventSubscriber]] = {}
+        self._session_start_lock = asyncio.Lock()
+        self._session_event_max = _parse_session_event_max(
+            os.environ.get("KGENT_SESSION_EVENT_MAX")
+        )
+
+    def _slim_for_history(self, event: AgentEvent) -> AgentEvent:
+        if event.type != "loop_checkpoint":
+            return event
+        payload = dict(event.payload)
+        payload.pop("messages", None)
+        payload.pop("tool_schemas", None)
+        return event.model_copy(update={"payload": payload})
+
+    def _trim_session_history(self, session_id: str) -> None:
+        history = self._session_events.get(session_id)
+        if history is None or len(history) <= self._session_event_max:
+            return
+        self._session_events[session_id] = history[-self._session_event_max :]
+
+    def get_active_run_id(self, session_id: str) -> str | None:
+        run_id = self._session_active_run.get(session_id)
+        if run_id is None:
+            return None
+        state = self._runs.get(run_id)
+        if state is None or state.status not in ACTIVE_STATUSES:
+            return None
+        return run_id
+
+    def has_active_run(self, session_id: str) -> bool:
+        return self.get_active_run_id(session_id) is not None
+
+    def subscribe_session(self, session_id: str, subscriber: EventSubscriber) -> None:
+        self._session_subscribers.setdefault(session_id, []).append(subscriber)
+
+    def unsubscribe_session(self, session_id: str, subscriber: EventSubscriber) -> None:
+        subscribers = self._session_subscribers.get(session_id)
+        if subscribers is None:
+            return
+        self._session_subscribers[session_id] = [item for item in subscribers if item is not subscriber]
+        if not self._session_subscribers[session_id]:
+            self._session_subscribers.pop(session_id, None)
+
+    def get_session_events_after(self, session_id: str, after_seq: int) -> list[AgentEvent]:
+        return [event for event in self._session_events.get(session_id, []) if event.seq > after_seq]
+
+    def _next_session_seq(self, session_id: str) -> int:
+        self._session_seq[session_id] = self._session_seq.get(session_id, 0) + 1
+        return self._session_seq[session_id]
+
+    def _clear_session_active_run(self, session_id: str, run_id: str) -> None:
+        if self._session_active_run.get(session_id) == run_id:
+            self._session_active_run.pop(session_id, None)
+
+    async def publish_session_event(self, event: AgentEvent, *, store: bool = True) -> AgentEvent:
+        session_id = event.session_id
+        session_seq = self._next_session_seq(session_id)
+        session_event = event.model_copy(update={"seq": session_seq})
+        if store:
+            history = self._session_events.setdefault(session_id, [])
+            history.append(self._slim_for_history(session_event))
+            self._trim_session_history(session_id)
+        subscribers = list(self._session_subscribers.get(session_id, []))
+        for subscriber in subscribers:
+            try:
+                result = subscriber(session_event)
+                if asyncio.iscoroutine(result):
+                    await result
+            except Exception:
+                continue
+        return session_event
+
+    async def emit_session_error(
+        self,
+        *,
+        session_id: str,
+        run_id: str,
+        error: str,
+    ) -> AgentEvent:
+        from app.runtime.protocol import error_event
+
+        return await self.publish_session_event(
+            error_event(
+                run_id=run_id,
+                session_id=session_id,
+                seq=0,
+                error=error,
+            )
+        )
 
     def create_run(
         self,
@@ -69,7 +175,24 @@ class RunManager:
         )
         if connection_id:
             self._connection_runs.setdefault(connection_id, set()).add(rid)
+        self._session_active_run[session_id] = rid
         return rid
+
+    async def start_run_if_idle(
+        self,
+        *,
+        session_id: str,
+        connection_id: str | None = None,
+        run_id: str | None = None,
+    ) -> str | None:
+        async with self._session_start_lock:
+            if self.has_active_run(session_id):
+                return None
+            return self.create_run(
+                session_id=session_id,
+                connection_id=connection_id,
+                run_id=run_id,
+            )
 
     def get_run(self, run_id: str) -> RunState | None:
         return self._runs.get(run_id)
@@ -103,13 +226,16 @@ class RunManager:
         if event.type == "run_finished":
             state.status = "completed"
             self._discard_connection_run(state)
+            self._clear_session_active_run(state.session_id, state.run_id)
         elif event.type == "run_failed":
             state.status = "failed"
             state.error = str(event.payload.get("error", ""))
             self._discard_connection_run(state)
+            self._clear_session_active_run(state.session_id, state.run_id)
         elif event.type == "run_cancelled":
             state.status = "cancelled"
             self._discard_connection_run(state)
+            self._clear_session_active_run(state.session_id, state.run_id)
         elif event.type == "permission_required":
             state.status = "waiting_permission"
         elif event.type == "permission_resolved" and state.status == "waiting_permission":
@@ -124,6 +250,7 @@ class RunManager:
                 continue
         if event.type in {"run_finished", "run_failed", "run_cancelled"}:
             self._subscribers.pop(event.run_id, None)
+        await self.publish_session_event(event)
 
     async def wait_for_permission(self, request: PermissionRequest) -> ResolvedPermission:
         state = self._runs.get(request.run_id)
@@ -255,6 +382,10 @@ class RunManager:
         self._runs.clear()
         self._connection_runs.clear()
         self._subscribers.clear()
+        self._session_active_run.clear()
+        self._session_events.clear()
+        self._session_seq.clear()
+        self._session_subscribers.clear()
 
 
 class RunManagerHost:

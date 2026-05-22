@@ -3,26 +3,7 @@
 from pathlib import Path
 from typing import Any
 
-# Files the agent must never read — secrets, credentials, env vars.
-_DENIED_NAMES = frozenset({
-    ".env", ".env.local", ".env.production", ".env.staging", ".env.development",
-    ".env.test", ".env.backup",
-})
-_DENIED_EXTENSIONS = frozenset({
-    ".key", ".pem", ".p12", ".pfx", ".crt", ".cer", ".jks",
-    ".keystore", ".secret", ".credentials",
-})
-
-
-def _is_denied(path: Path) -> bool:
-    name = path.name.lower()
-    if name in _DENIED_NAMES:
-        return True
-    if name.startswith(".env."):
-        return True
-    if path.suffix.lower() in _DENIED_EXTENSIONS:
-        return True
-    return False
+from app.tools.path_safety import ensure_not_protected, safe_resolve
 
 
 class ReadFileTool:
@@ -47,11 +28,8 @@ class ReadFileTool:
 
     async def call(self, input: dict[str, Any]) -> str:
         raw_path = input.get("path")
-        if not isinstance(raw_path, str) or not raw_path.strip():
-            raise ValueError("read_file requires a non-empty 'path' string")
-        target = _safe_resolve(self.project_root, raw_path)
-        if _is_denied(target):
-            raise ValueError(f"access denied: {raw_path} is a protected file")
+        target = safe_resolve(self.project_root, raw_path, tool_name=self.name)
+        ensure_not_protected(target, raw_path)
         if not target.exists():
             raise FileNotFoundError(f"file not found: {raw_path}")
         if not target.is_file():
@@ -60,15 +38,3 @@ class ReadFileTool:
         if len(content) > self.max_chars:
             return content[: self.max_chars] + "\n...[truncated]"
         return content
-
-
-def _safe_resolve(project_root: Path, raw_path: str) -> Path:
-    candidate = Path(raw_path)
-    if candidate.is_absolute() or ".." in candidate.parts:
-        raise ValueError("path must be project-relative and cannot contain '..'")
-    if any(part.startswith(".") for part in candidate.parts if part not in {"."}):
-        raise ValueError("path cannot reference hidden files or directories")
-    resolved = (project_root / candidate).resolve()
-    if project_root != resolved and project_root not in resolved.parents:
-        raise ValueError("path escapes project root")
-    return resolved

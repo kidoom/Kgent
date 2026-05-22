@@ -93,6 +93,20 @@ function isStaleRunEvent(tracker: RunTracker, event: AgentEvent): boolean {
   return false;
 }
 
+function formatEventError(payload: Record<string, unknown>): string {
+  const err = payload.error;
+  if (typeof err === "string" && err.length > 0) {
+    return err;
+  }
+  if (err && typeof err === "object" && "message" in err) {
+    const message = (err as { message?: unknown }).message;
+    if (typeof message === "string" && message.length > 0) {
+      return message;
+    }
+  }
+  return "Unknown error";
+}
+
 /** Returns null when the event should be ignored (stale run). */
 export function applyAgentEvent(
   prev: TurnState,
@@ -184,7 +198,7 @@ export function applyAgentEvent(
         {
           ...next,
           phase: "error",
-          error: String(event.payload.error ?? "Unknown error"),
+          error: formatEventError(event.payload),
           pendingPermission: null,
         },
         event,

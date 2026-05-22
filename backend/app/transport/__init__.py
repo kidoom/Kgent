@@ -1,1 +1,0 @@
-"""Transport layer (WebSocket server)."""

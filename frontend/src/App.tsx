@@ -1,12 +1,31 @@
+import { useEffect, useState } from "react";
+
 import { ChatPanel } from "./components/ChatPanel";
 import { LoopTracePanel } from "./components/LoopTracePanel";
 import { PermissionDialog } from "./components/PermissionDialog";
 import { StatusBar } from "./components/StatusBar";
-import { useRuntimeWs } from "./hooks/useRuntimeWs";
-
-const SESSION_ID = "web-default";
+import { useRuntimeHttp } from "./hooks/useRuntimeHttp";
+import { resolveSessionId } from "./lib/sessionId";
 
 export function App() {
+  const [sessionId, setSessionId] = useState<string | null>(null);
+
+  useEffect(() => {
+    void resolveSessionId().then(setSessionId);
+  }, []);
+
+  if (!sessionId) {
+    return (
+      <div className="app">
+        <p className="muted">Initializing session…</p>
+      </div>
+    );
+  }
+
+  return <AppShell sessionId={sessionId} />;
+}
+
+function AppShell({ sessionId }: { sessionId: string }) {
   const {
     connectionStatus,
     connectionDetail,
@@ -16,11 +35,11 @@ export function App() {
     resolvePermission,
     cancelRun,
     reconnect,
-  } = useRuntimeWs(SESSION_ID);
+  } = useRuntimeHttp(sessionId);
 
-  const handleSend = (message: string) => {
+  const handleSend = async (message: string) => {
     try {
-      sendMessage(message);
+      await sendMessage(message);
     } catch (error) {
       alert(error instanceof Error ? error.message : String(error));
     }

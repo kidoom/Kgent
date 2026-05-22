@@ -127,6 +127,22 @@ describe("turnReducer stale run isolation", () => {
     expect(turn.phase).toBe("done");
     expect(turn.answer).toBe("summary of readme");
   });
+
+  it("parses structured run_failed error payload", () => {
+    const tracker = createRunTracker();
+    let turn = beginRun(tracker, sessionId);
+    turn = applyAgentEvent(turn, makeEvent("run_started", "run_err"), tracker) ?? turn;
+    turn =
+      applyAgentEvent(
+        turn,
+        makeEvent("run_failed", "run_err", {
+          error: { type: "model_error", message: "provider request failed" },
+        }),
+        tracker,
+      ) ?? turn;
+    expect(turn.phase).toBe("error");
+    expect(turn.error).toBe("provider request failed");
+  });
 });
 
 function makeEvent(

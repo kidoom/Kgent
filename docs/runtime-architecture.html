@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kgent Runtime 架构导读</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #f4f6fb;
+      --surface: #ffffff;
+      --surface-2: #eef1f8;
+      --text: #1a2233;
+      --muted: #5c6b82;
+      --border: #d8dfea;
+      --accent: #3b6ef5;
+      --accent-soft: #e8efff;
+      --transport: #0d9488;
+      --transport-soft: #ccfbf1;
+      --runtime: #7c3aed;
+      --runtime-soft: #ede9fe;
+      --loop: #ea580c;
+      --loop-soft: #ffedd5;
+      --host: #db2777;
+      --host-soft: #fce7f3;
+      --ok: #059669;
+      --warn: #d97706;
+      --danger: #dc2626;
+      --shadow: 0 1px 3px rgba(26, 34, 51, 0.06), 0 8px 24px rgba(26, 34, 51, 0.06);
+      --radius: 14px;
+      --mono: "JetBrains Mono", ui-monospace, monospace;
+      --sans: "DM Sans", system-ui, sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+      font-size: 16px;
+    }
+
+    .hero {
+      background: linear-gradient(135deg, #1e3a8a 0%, #3b6ef5 50%, #7c3aed 100%);
+      color: #fff;
+      padding: 3rem 1.5rem 4rem;
+    }
+
+    .hero-inner {
+      max-width: 960px;
+      margin: 0 auto;
+    }
+
+    .hero h1 {
+      font-size: clamp(1.75rem, 4vw, 2.5rem);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.75rem;
+    }
+
+    .hero p {
+      opacity: 0.9;
+      max-width: 52ch;
+      font-size: 1.05rem;
+    }
+
+    .hero-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 1.25rem;
+    }
+
+    .tag {
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.25);
+      padding: 0.25rem 0.75rem;
+      border-radius: 999px;
+      font-size: 0.82rem;
+      font-weight: 500;
+    }
+
+    main {
+      max-width: 960px;
+      margin: -2rem auto 4rem;
+      padding: 0 1.5rem;
+    }
+
+    nav.tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      background: var(--surface);
+      padding: 0.75rem;
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      margin-bottom: 1.5rem;
+      position: sticky;
+      top: 0.75rem;
+      z-index: 10;
+    }
+
+    nav.tabs button {
+      font-family: var(--sans);
+      font-size: 0.9rem;
+      font-weight: 500;
+      padding: 0.55rem 1rem;
+      border: 1px solid transparent;
+      border-radius: 10px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    nav.tabs button:hover { background: var(--surface-2); color: var(--text); }
+    nav.tabs button.active {
+      background: var(--accent-soft);
+      color: var(--accent);
+      border-color: #c7d7fc;
+    }
+
+    .panel { display: none; animation: fade 0.25s ease; }
+    .panel.active { display: block; }
+
+    @keyframes fade {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      box-shadow: var(--shadow);
+      margin-bottom: 1.25rem;
+    }
+
+    .card h2 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      letter-spacing: -0.01em;
+    }
+
+    .card h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin: 1.25rem 0 0.5rem;
+      color: var(--text);
+    }
+
+    .card p, .card li { color: var(--muted); }
+    .card > p { margin-bottom: 0.75rem; }
+
+    .lead {
+      font-size: 1.05rem;
+      color: var(--text) !important;
+      font-weight: 500;
+    }
+
+    /* Layer stack */
+    .layer-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 0.65rem;
+      margin: 1.25rem 0;
+    }
+
+    .layer {
+      display: grid;
+      grid-template-columns: 140px 1fr auto;
+      align-items: center;
+      gap: 1rem;
+      padding: 1rem 1.25rem;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+    }
+
+    .layer-label {
+      font-weight: 700;
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .layer-file {
+      font-family: var(--mono);
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+
+    .layer-desc { font-size: 0.92rem; color: var(--muted); }
+
+    .layer.transport { background: var(--transport-soft); border-color: #99f6e4; }
+    .layer.transport .layer-label { color: var(--transport); }
+    .layer.runtime { background: var(--runtime-soft); border-color: #c4b5fd; }
+    .layer.runtime .layer-label { color: var(--runtime); }
+    .layer.loop { background: var(--loop-soft); border-color: #fdba74; }
+    .layer.loop .layer-label { color: var(--loop); }
+    .layer.host { background: var(--host-soft); border-color: #f9a8d4; }
+    .layer.host .layer-label { color: var(--host); }
+
+    .arrow-down {
+      text-align: center;
+      color: var(--muted);
+      font-size: 1.25rem;
+      line-height: 1;
+    }
+
+    /* File cards grid */
+    .file-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+
+    .file-card {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.15rem;
+      background: var(--surface-2);
+    }
+
+    .file-card .name {
+      font-family: var(--mono);
+      font-size: 0.88rem;
+      font-weight: 500;
+      color: var(--text);
+      margin-bottom: 0.35rem;
+    }
+
+    .file-card .role {
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-bottom: 0.75rem;
+    }
+
+    .file-card ul {
+      list-style: none;
+      font-size: 0.85rem;
+    }
+
+    .file-card li {
+      padding: 0.3rem 0;
+      padding-left: 1rem;
+      position: relative;
+      color: var(--muted);
+    }
+
+    .file-card li::before {
+      content: "→";
+      position: absolute;
+      left: 0;
+      color: var(--accent);
+    }
+
+    /* State machine */
+    .state-flow {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem;
+      margin: 1.25rem 0;
+    }
+
+    .state {
+      padding: 0.5rem 0.9rem;
+      border-radius: 999px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      font-family: var(--mono);
+      white-space: nowrap;
+    }
+
+    .state.running { background: #dbeafe; color: #1d4ed8; }
+    .state.waiting { background: #fef3c7; color: #b45309; }
+    .state.done { background: #d1fae5; color: #047857; }
+    .state.bad { background: #fee2e2; color: #b91c1c; }
+
+    .state-arrow { color: var(--muted); font-size: 1.1rem; }
+
+    /* Sequence */
+    .sequence {
+      overflow-x: auto;
+      margin: 1rem 0;
+    }
+
+    .seq-table {
+      width: 100%;
+      min-width: 640px;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+    }
+
+    .seq-table th {
+      text-align: left;
+      padding: 0.65rem 0.75rem;
+      background: var(--surface-2);
+      border-bottom: 2px solid var(--border);
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .seq-table td {
+      padding: 0.65rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+      color: var(--muted);
+    }
+
+    .seq-table tr:hover td { background: #fafbfd; }
+
+    .actor {
+      display: inline-block;
+      padding: 0.15rem 0.5rem;
+      border-radius: 6px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      font-family: var(--mono);
+    }
+
+    .actor.client { background: #e0e7ff; color: #3730a3; }
+    .actor.ws { background: var(--transport-soft); color: var(--transport); }
+    .actor.rm { background: var(--runtime-soft); color: var(--runtime); }
+    .actor.loop { background: var(--loop-soft); color: var(--loop); }
+
+    /* Compare table */
+    .compare {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+      margin-top: 1rem;
+    }
+
+    .compare th, .compare td {
+      padding: 0.75rem 1rem;
+      text-align: left;
+      border: 1px solid var(--border);
+    }
+
+    .compare th {
+      background: var(--surface-2);
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .compare td { color: var(--muted); }
+
+    .compare code {
+      font-family: var(--mono);
+      font-size: 0.82rem;
+      background: var(--surface-2);
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+      color: var(--text);
+    }
+
+    /* Method cards */
+    .method-list {
+      display: grid;
+      gap: 0.75rem;
+      margin-top: 1rem;
+    }
+
+    .method {
+      border-left: 4px solid var(--runtime);
+      background: var(--surface-2);
+      padding: 0.85rem 1rem;
+      border-radius: 0 10px 10px 0;
+    }
+
+    .method .sig {
+      font-family: var(--mono);
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--runtime);
+      margin-bottom: 0.35rem;
+    }
+
+    .method .explain { font-size: 0.88rem; color: var(--muted); }
+
+    /* Data fields */
+    .fields {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 0.65rem;
+      margin-top: 1rem;
+    }
+
+    .field {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.75rem 0.9rem;
+    }
+
+    .field .key {
+      font-family: var(--mono);
+      font-size: 0.82rem;
+      font-weight: 500;
+      color: var(--text);
+    }
+
+    .field .val {
+      font-size: 0.82rem;
+      color: var(--muted);
+      margin-top: 0.2rem;
+    }
+
+    .note {
+      background: var(--accent-soft);
+      border: 1px solid #c7d7fc;
+      border-radius: 10px;
+      padding: 0.85rem 1rem;
+      font-size: 0.9rem;
+      color: #1e40af;
+      margin-top: 1rem;
+    }
+
+    .note strong { color: #1e3a8a; }
+
+    footer {
+      text-align: center;
+      padding: 2rem;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+
+    @media (max-width: 640px) {
+      .layer { grid-template-columns: 1fr; gap: 0.35rem; }
+      nav.tabs { position: static; }
+    }
+  </style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="hero-inner">
+    <h1>Kgent Runtime 架构导读</h1>
+    <p>用分层图、状态机和时序表，把 agent 运行时讲清楚——不用啃长文。</p>
+    <div class="hero-tags">
+      <span class="tag">run_manager.py</span>
+      <span class="tag">host.py</span>
+      <span class="tag">loop.py</span>
+      <span class="tag">ws_server.py</span>
+    </div>
+  </div>
+</header>
+
+<main>
+  <nav class="tabs" role="tablist">
+    <button class="active" data-tab="overview">总览</button>
+    <button data-tab="layers">四层分工</button>
+    <button data-tab="runmanager">RunManager</button>
+    <button data-tab="host">Host 对比</button>
+    <button data-tab="flow">一次完整交互</button>
+  </nav>
+
+  <!-- OVERVIEW -->
+  <section id="overview" class="panel active">
+    <div class="card">
+      <h2>一句话</h2>
+      <p class="lead">前端通过 WebSocket 发命令 → ws_server 解析 → RunManager 管状态和权限等待 → loop 跑 agent 逻辑 → 事件推回前端。</p>
+    </div>
+
+    <div class="card">
+      <h2>核心矛盾 & 解法</h2>
+      <p><strong style="color:var(--text)">矛盾：</strong>loop 写起来像同步代码（<code style="font-family:var(--mono);font-size:0.85rem">await 等权限</code>），但 WebSocket 是异步、跨网络的。</p>
+      <p style="margin-top:0.75rem"><strong style="color:var(--text)">解法：</strong>RunManager 用 <code style="font-family:var(--mono);font-size:0.85rem">asyncio.Future</code> 做桥——loop 阻塞在 Future 上，客户端稍后回复，Future 被唤醒，loop 继续跑。</p>
+    </div>
+
+    <div class="card">
+      <h2>谁负责什么（速查）</h2>
+      <table class="compare">
+        <thead>
+          <tr><th>文件</th><th>层级</th><th>一句话</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>ws_server.py</code></td><td>传输层</td><td>WebSocket 协议、JSON 命令、推事件给客户端</td></tr>
+          <tr><td><code>run_manager.py</code></td><td>调度层</td><td>run 状态机、事件历史、权限 Future 阻塞/唤醒</td></tr>
+          <tr><td><code>loop.py</code></td><td>业务层</td><td>模型调用、工具执行、多轮循环</td></tr>
+          <tr><td><code>host.py</code></td><td>适配层</td><td>把 loop 和外部 IO 隔开（CLI / 测试用实现）</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- LAYERS -->
+  <section id="layers" class="panel">
+    <div class="card">
+      <h2>四层架构（从上到下）</h2>
+      <p>数据和控制流大致如下，越往上越靠近用户，越往下越靠近 agent 核心。</p>
+
+      <div class="layer-stack">
+        <div class="layer transport">
+          <span class="layer-label">传输层</span>
+          <span class="layer-file">transport/ws_server.py</span>
+          <span class="layer-desc">收 JSON 命令，推 JSON 事件</span>
+        </div>
+        <div class="arrow-down">↓ 调用 / 订阅</div>
+        <div class="layer runtime">
+          <span class="layer-label">调度层</span>
+          <span class="layer-file">runtime/run_manager.py</span>
+          <span class="layer-desc">管 run 生命周期 + 权限等待</span>
+        </div>
+        <div class="arrow-down">↓ RunManagerHost 适配</div>
+        <div class="layer loop">
+          <span class="layer-label">业务层</span>
+          <span class="layer-file">runtime/loop.py</span>
+          <span class="layer-desc">run_agent_stream() 核心循环</span>
+        </div>
+        <div class="arrow-down">↓ AgentHost 接口</div>
+        <div class="layer host">
+          <span class="layer-label">适配层</span>
+          <span class="layer-file">runtime/host.py + RunManagerHost</span>
+          <span class="layer-desc">emit / request_permission / check_cancelled</span>
+        </div>
+      </div>
+
+      <div class="note">
+        <strong>注意：</strong><code>RunManagerHost</code> 定义在 <code>run_manager.py</code> 里，不在 <code>host.py</code>。WebSocket 路径用的是前者；CLI 和测试用的是 <code>host.py</code> 里的实现。
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>各文件详细职责</h2>
+      <div class="file-grid">
+        <div class="file-card">
+          <div class="name">ws_server.py</div>
+          <div class="role">对外接口 · 知道 WebSocket</div>
+          <ul>
+            <li>监听 ws://127.0.0.1:8765/runtime</li>
+            <li>解析 start_run / permission_decision / cancel_run</li>
+            <li>subscribe 事件 → 推给客户端</li>
+            <li>断线时 cancel_runs_for_connection</li>
+          </ul>
+        </div>
+        <div class="file-card">
+          <div class="name">run_manager.py</div>
+          <div class="role">对内调度 · 不知道 WebSocket</div>
+          <ul>
+            <li>内存里维护所有 RunState</li>
+            <li>record_event 存历史 + 广播</li>
+            <li>wait_for_permission 阻塞 loop</li>
+            <li>resolve_permission 唤醒 loop</li>
+          </ul>
+        </div>
+        <div class="file-card">
+          <div class="name">loop.py</div>
+          <div class="role">Agent 大脑</div>
+          <ul>
+            <li>多轮 model → tool → observe</li>
+            <li>通过 host.emit 发步骤事件</li>
+            <li>权限 ask 时 await host.request_permission</li>
+            <li>每轮 check_cancelled</li>
+          </ul>
+        </div>
+        <div class="file-card">
+          <div class="name">host.py</div>
+          <div class="role">IO 适配（非 WS 路径）</div>
+          <ul>
+            <li>AgentHost 协议定义</li>
+            <li>CollectingHost → run_agent() 测试/同步</li>
+            <li>CLIHost → debug 命令行</li>
+            <li>build_permission_request 等 helper</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- RUN MANAGER -->
+  <section id="runmanager" class="panel">
+    <div class="card">
+      <h2>RunManager 是什么</h2>
+      <p class="lead">进程内的 run 监督器（supervisor）。每个 agent 运行 = 一个 run，有独立的状态、事件历史和最多一个 pending 权限请求。</p>
+    </div>
+
+    <div class="card">
+      <h2>RunState — 一个 run 的账本</h2>
+      <div class="fields">
+        <div class="field"><div class="key">run_id</div><div class="val">唯一标识</div></div>
+        <div class="field"><div class="key">session_id</div><div class="val">对话会话</div></div>
+        <div class="field"><div class="key">status</div><div class="val">当前状态（见下方状态机）</div></div>
+        <div class="field"><div class="key">events[]</div><div class="val">完整事件历史，可回放</div></div>
+        <div class="field"><div class="key">seq</div><div class="val">最大事件序号</div></div>
+        <div class="field"><div class="key">pending</div><div class="val">正在等的权限 Future（最多 1 个）</div></div>
+        <div class="field"><div class="key">connection_id</div><div class="val">绑定的 WS 连接，断线清理用</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>状态机</h2>
+      <div class="state-flow">
+        <span class="state running">running</span>
+        <span class="state-arrow">→</span>
+        <span class="state waiting">waiting_permission</span>
+        <span class="state-arrow">→</span>
+        <span class="state running">running</span>
+        <span class="state-arrow">→</span>
+        <span class="state done">completed</span>
+      </div>
+      <div class="state-flow" style="margin-top:0.5rem">
+        <span class="state running">running</span>
+        <span class="state-arrow">→</span>
+        <span class="state bad">cancelled</span>
+        <span style="color:var(--muted);font-size:0.85rem;margin:0 0.5rem">或</span>
+        <span class="state bad">failed</span>
+      </div>
+      <p style="margin-top:1rem;font-size:0.9rem">只有 <code style="font-family:var(--mono)">running</code> 和 <code style="font-family:var(--mono)">waiting_permission</code> 可以被 cancel。</p>
+    </div>
+
+    <div class="card">
+      <h2>五个关键方法</h2>
+      <div class="method-list">
+        <div class="method">
+          <div class="sig">create_run(session_id, connection_id)</div>
+          <div class="explain">登记新 run，返回 run_id。ws_server 收到 start_run 时调用。</div>
+        </div>
+        <div class="method">
+          <div class="sig">record_event(event)</div>
+          <div class="explain">事件中枢：存历史 → 更新 status → 通知所有 subscriber（ws 推给前端）。run 结束时清理 subscriber。</div>
+        </div>
+        <div class="method">
+          <div class="sig">wait_for_permission(request)</div>
+          <div class="explain">创建 Future，发 permission_required 事件，然后 await 阻塞。loop 卡在这里，等用户回复。</div>
+        </div>
+        <div class="method">
+          <div class="sig">resolve_permission(run_id, id, decision)</div>
+          <div class="explain">客户端回复 allow/deny → future.set_result() → loop 被唤醒，继续执行或拒绝工具。</div>
+        </div>
+        <div class="method">
+          <div class="sig">cancel_run(run_id)</div>
+          <div class="explain">标记 cancelled；如有 pending 权限则 deny 掉 Future，避免 loop 永远挂起。</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>RunManager 的三个索引</h2>
+      <table class="compare">
+        <thead><tr><th>字典</th><th>用途</th></tr></thead>
+        <tbody>
+          <tr><td><code>_runs</code></td><td>run_id → RunState</td></tr>
+          <tr><td><code>_connection_runs</code></td><td>connection_id → 该连接下所有活跃 run</td></tr>
+          <tr><td><code>_subscribers</code></td><td>run_id → 回调列表（ws_server 注册，收到事件就推送）</td></tr>
+        </tbody>
+      </table>
+      <div class="note" style="margin-top:1rem">
+        <strong>局限：</strong>全是进程内存，重启即丢失。适合单机开发/debug，不是分布式调度器。
+      </div>
+    </div>
+  </section>
+
+  <!-- HOST COMPARE -->
+  <section id="host" class="panel">
+    <div class="card">
+      <h2>AgentHost 接口（三个方法）</h2>
+      <p>loop 只认这个协议，不关心背后是 WebSocket 还是终端：</p>
+      <div class="method-list">
+        <div class="method" style="border-color:var(--host)">
+          <div class="sig" style="color:var(--host)">emit(event)</div>
+          <div class="explain">推送 agent_step、run_finished 等事件</div>
+        </div>
+        <div class="method" style="border-color:var(--host)">
+          <div class="sig" style="color:var(--host)">request_permission(request)</div>
+          <div class="explain">工具需要用户确认时阻塞等待</div>
+        </div>
+        <div class="method" style="border-color:var(--host)">
+          <div class="sig" style="color:var(--host)">check_cancelled()</div>
+          <div class="explain">每轮循环检查是否被取消</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>四种 Host 实现对比</h2>
+      <table class="compare">
+        <thead>
+          <tr><th>实现</th><th>定义位置</th><th>用于</th><th>权限怎么处理</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>RunManagerHost</code></td>
+            <td>run_manager.py</td>
+            <td>WebSocket 前端</td>
+            <td>Future 阻塞，等客户端 permission_decision</td>
+          </tr>
+          <tr>
+            <td><code>CLIHost</code></td>
+            <td>host.py</td>
+            <td>debug 命令行</td>
+            <td>终端 stdin 问 [y/N]</td>
+          </tr>
+          <tr>
+            <td><code>CollectingHost</code></td>
+            <td>host.py</td>
+            <td>run_agent() / 测试</td>
+            <td>自动 deny（不支持交互）</td>
+          </tr>
+          <tr>
+            <td><code>NullHost</code></td>
+            <td>host.py</td>
+            <td>（预留，未使用）</td>
+            <td>全 no-op，权限一律 deny</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- FLOW -->
+  <section id="flow" class="panel">
+    <div class="card">
+      <h2>完整交互时序</h2>
+      <p>用户发消息 → agent 要调高风险工具 → 用户点允许 → 拿到最终答案。</p>
+
+      <div class="sequence">
+        <table class="seq-table">
+          <thead>
+            <tr>
+              <th style="width:3rem">#</th>
+              <th style="width:7rem">谁</th>
+              <th>做什么</th>
+              <th>结果</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>1</td>
+              <td><span class="actor client">前端</span></td>
+              <td>发 <code style="font-family:var(--mono);font-size:0.82rem">start_run</code></td>
+              <td>—</td>
+            </tr>
+            <tr>
+              <td>2</td>
+              <td><span class="actor ws">ws_server</span></td>
+              <td>create_run + subscribe + 启动 run_agent_stream</td>
+              <td>run_id 生成</td>
+            </tr>
+            <tr>
+              <td>3</td>
+              <td><span class="actor loop">loop</span></td>
+              <td>emit(run_started) → 调模型 → emit(agent_step)</td>
+              <td>前端看到思考/步骤</td>
+            </tr>
+            <tr>
+              <td>4</td>
+              <td><span class="actor loop">loop</span></td>
+              <td>工具权限 = ask → host.request_permission()</td>
+              <td>loop 阻塞 ⏸</td>
+            </tr>
+            <tr>
+              <td>5</td>
+              <td><span class="actor rm">RunManager</span></td>
+              <td>发 permission_required → subscriber 推 WS</td>
+              <td>前端弹权限对话框</td>
+            </tr>
+            <tr>
+              <td>6</td>
+              <td><span class="actor client">前端</span></td>
+              <td>发 permission_decision {allow}</td>
+              <td>—</td>
+            </tr>
+            <tr>
+              <td>7</td>
+              <td><span class="actor rm">RunManager</span></td>
+              <td>resolve_permission → future.set_result(allow)</td>
+              <td>loop 唤醒 ▶</td>
+            </tr>
+            <tr>
+              <td>8</td>
+              <td><span class="actor loop">loop</span></td>
+              <td>执行工具 → 继续循环 → emit(run_finished)</td>
+              <td>前端显示最终答案</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>WebSocket 命令 ↔ RunManager 方法</h2>
+      <table class="compare">
+        <thead><tr><th>客户端命令</th><th>ws_server 调用</th></tr></thead>
+        <tbody>
+          <tr><td><code>start_run</code></td><td>create_run → run_agent_stream</td></tr>
+          <tr><td><code>permission_decision</code></td><td>resolve_permission</td></tr>
+          <tr><td><code>cancel_run</code></td><td>cancel_run + 取消 asyncio task</td></tr>
+          <tr><td>（断线）</td><td>cancel_runs_for_connection</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>loop 推事件 → 前端看到什么</h2>
+      <table class="compare">
+        <thead><tr><th>事件类型</th><th>含义</th></tr></thead>
+        <tbody>
+          <tr><td><code>run_started</code></td><td>开始跑</td></tr>
+          <tr><td><code>agent_step</code></td><td>一步思考 / 工具调用</td></tr>
+          <tr><td><code>loop_checkpoint</code></td><td>调试用的循环检查点</td></tr>
+          <tr><td><code>permission_required</code></td><td>需要你点允许/拒绝</td></tr>
+          <tr><td><code>permission_resolved</code></td><td>权限已决定</td></tr>
+          <tr><td><code>run_finished</code></td><td>完成，带最终 answer</td></tr>
+          <tr><td><code>run_cancelled</code></td><td>被取消</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<footer>
+  Kgent · 直接用浏览器打开此文件即可阅读 · docs/runtime-architecture.html
+</footer>
+
+<script>
+  const tabs = document.querySelectorAll("nav.tabs button");
+  const panels = document.querySelectorAll(".panel");
+
+  tabs.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      const id = tab.dataset.tab;
+      tabs.forEach((t) => t.classList.toggle("active", t === tab));
+      panels.forEach((p) => p.classList.toggle("active", p.id === id));
+    });
+  });
+</script>
+</body>
+</html>

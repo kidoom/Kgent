@@ -2,9 +2,13 @@ from pathlib import Path
 
 import pytest
 
+from app.tools.base import tool_to_schema
 from app.tools.calculator import CalculatorTool
+from app.tools.edit_file import EditFileTool
 from app.tools.list_files import ListFilesTool
 from app.tools.read_file import ReadFileTool
+from app.tools.registry import build_tools, find_tool_by_name
+from app.tools.write_file import WriteFileTool
 
 
 @pytest.mark.asyncio
@@ -62,3 +66,103 @@ async def test_list_files_blocks_hidden_directory(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError):
         await tool.call({"path": ".git"})
+
+
+@pytest.mark.asyncio
+async def test_write_file_writes_project_file(tmp_path: Path) -> None:
+    tool = WriteFileTool(project_root=tmp_path)
+
+    result = await tool.call({"path": "notes/todo.txt", "content": "ship it"})
+
+    assert (tmp_path / "notes" / "todo.txt").read_text(encoding="utf-8") == "ship it"
+    assert "written: notes/todo.txt" in result
+    assert "chars: 7" in result
+
+
+@pytest.mark.asyncio
+async def test_write_file_blocks_parent_traversal(tmp_path: Path) -> None:
+    tool = WriteFileTool(project_root=tmp_path)
+
+    with pytest.raises(ValueError):
+        await tool.call({"path": "../secret.txt", "content": "nope"})
+
+
+@pytest.mark.asyncio
+async def test_write_file_blocks_protected_env_file(tmp_path: Path) -> None:
+    tool = WriteFileTool(project_root=tmp_path)
+
+    with pytest.raises(ValueError):
+        await tool.call({"path": ".env", "content": "KGENT_API_KEY=secret"})
+
+    assert not (tmp_path / ".env").exists()
+
+
+@pytest.mark.asyncio
+async def test_write_file_blocks_hidden_directory(tmp_path: Path) -> None:
+    tool = WriteFileTool(project_root=tmp_path)
+
+    with pytest.raises(ValueError):
+        await tool.call({"path": ".git/config", "content": "token=secret"})
+
+
+@pytest.mark.asyncio
+async def test_edit_file_replaces_unique_text(tmp_path: Path) -> None:
+    target = tmp_path / "README.md"
+    target.write_text("hello old world", encoding="utf-8")
+    tool = EditFileTool(project_root=tmp_path)
+
+    result = await tool.call({"path": "README.md", "old_text": "old", "new_text": "new"})
+
+    assert target.read_text(encoding="utf-8") == "hello new world"
+    assert "edited: README.md" in result
+    assert "replaced: 1 occurrence" in result
+
+
+@pytest.mark.asyncio
+async def test_edit_file_missing_old_text_does_not_mutate(tmp_path: Path) -> None:
+    target = tmp_path / "README.md"
+    target.write_text("hello world", encoding="utf-8")
+    tool = EditFileTool(project_root=tmp_path)
+
+    with pytest.raises(ValueError):
+        await tool.call({"path": "README.md", "old_text": "missing", "new_text": "new"})
+
+    assert target.read_text(encoding="utf-8") == "hello world"
+
+
+@pytest.mark.asyncio
+async def test_edit_file_duplicate_old_text_does_not_mutate(tmp_path: Path) -> None:
+    target = tmp_path / "README.md"
+    target.write_text("old and old", encoding="utf-8")
+    tool = EditFileTool(project_root=tmp_path)
+
+    with pytest.raises(ValueError):
+        await tool.call({"path": "README.md", "old_text": "old", "new_text": "new"})
+
+    assert target.read_text(encoding="utf-8") == "old and old"
+
+
+@pytest.mark.asyncio
+async def test_edit_file_blocks_protected_env_file(tmp_path: Path) -> None:
+    target = tmp_path / ".env"
+    target.write_text("KGENT_API_KEY=secret", encoding="utf-8")
+    tool = EditFileTool(project_root=tmp_path)
+
+    with pytest.raises(ValueError):
+        await tool.call({"path": ".env", "old_text": "secret", "new_text": "public"})
+
+    assert target.read_text(encoding="utf-8") == "KGENT_API_KEY=secret"
+
+
+def test_registry_includes_mutation_tools_without_schema_risk_level(tmp_path: Path) -> None:
+    tools = build_tools(tmp_path)
+
+    write_tool = find_tool_by_name(tools, "write_file")
+    edit_tool = find_tool_by_name(tools, "edit_file")
+
+    assert write_tool is not None
+    assert edit_tool is not None
+    assert write_tool.risk_level == "high"
+    assert edit_tool.risk_level == "high"
+    assert "risk_level" not in tool_to_schema(write_tool)
+    assert "risk_level" not in tool_to_schema(edit_tool)
