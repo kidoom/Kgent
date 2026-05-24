@@ -5,6 +5,7 @@ export type AgentEventType =
   | "loop_checkpoint"
   | "agent_step"
   | "tool_call_started"
+  | "todo_state"
   | "permission_required"
   | "permission_resolved"
   | "tool_result"

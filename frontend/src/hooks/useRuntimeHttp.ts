@@ -6,28 +6,27 @@ import {
   applyConnectionLoss,
   beginRun,
   createRunTracker,
+  emptyTurn,
   resetRunTracker,
 } from "../lib/turnReducer";
 import type { ConnectionStatus, RunPhase, TurnState } from "../types/protocol";
 
 const RUN_TIMEOUT_MS = 120_000;
 
-export function useRuntimeHttp(sessionId: string) {
+export function useRuntimeHttp(sessionId: string, initialFromSeq = 0) {
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("disconnected");
   const [connectionDetail, setConnectionDetail] = useState<string | null>(null);
   const [turn, setTurn] = useState<TurnState>(() => ({
-    runId: null,
-    sessionId,
-    phase: "idle",
-    steps: [],
-    events: [],
-    answer: null,
-    error: null,
-    pendingPermission: null,
+    ...emptyTurn(sessionId),
   }));
   const clientRef = useRef<RuntimeHttpClient | null>(null);
   const runTrackerRef = useRef(createRunTracker());
   const runTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    resetRunTracker(runTrackerRef.current);
+    setTurn(emptyTurn(sessionId));
+  }, [sessionId]);
 
   const clearRunTimeout = useCallback(() => {
     if (runTimeoutRef.current != null) {
@@ -100,7 +99,7 @@ export function useRuntimeHttp(sessionId: string) {
   );
 
   useEffect(() => {
-    const client = new RuntimeHttpClient(sessionId, handleEvent, handleStatus);
+    const client = new RuntimeHttpClient(sessionId, handleEvent, handleStatus, initialFromSeq);
     clientRef.current = client;
     void client.connect();
     return () => {
@@ -108,7 +107,7 @@ export function useRuntimeHttp(sessionId: string) {
       client.disconnect();
       clientRef.current = null;
     };
-  }, [clearRunTimeout, handleEvent, handleStatus, sessionId]);
+  }, [clearRunTimeout, handleEvent, handleStatus, initialFromSeq, sessionId]);
 
   const sendMessage = useCallback(
     async (message: string) => {

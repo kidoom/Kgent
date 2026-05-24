@@ -18,13 +18,15 @@ export function ChatPanel({ disabled, onSend }: Props) {
 
   return (
     <form className="chat-panel" onSubmit={handleSubmit}>
-      <label htmlFor="user-message">Message</label>
+      <label htmlFor="user-message" className="sr-only">
+        Message
+      </label>
       <textarea
         id="user-message"
         rows={3}
         value={message}
         disabled={disabled}
-        placeholder="e.g. calculate 12 * 8 + 6"
+        placeholder="Ask Kgent to inspect, explain, or change something..."
         onChange={(event) => setMessage(event.target.value)}
       />
       <button type="submit" disabled={disabled || !message.trim()}>

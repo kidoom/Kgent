@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 import pytest
 
+from app.api import runtime_service
+from app.memory.persistence import PersistenceError
 from app.runtime.protocol import AgentEvent, PermissionRequest, ResolvedPermission, permission_required_event
 from app.runtime.run_manager import (
     DEFAULT_SESSION_EVENT_MAX,
     RunManager,
+    RunManagerError,
     _parse_session_event_max,
 )
 
@@ -262,3 +266,38 @@ async def test_cancel_runs_for_connection_skips_completed_runs() -> None:
     state = manager.get_run(run_id)
     assert state is not None
     assert state.status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_execute_run_clears_active_run_when_failure_event_persistence_fails(monkeypatch) -> None:
+    manager = RunManager()
+    run_id = manager.create_run(session_id="persist_fail")
+
+    class FailingPersistence:
+        def append_agent_event(self, session_id, event) -> None:
+            raise PersistenceError("transcript full")
+
+    async def fail_run(**_kwargs) -> None:
+        raise RunManagerError("initial persistence failure")
+
+    monkeypatch.setattr(runtime_service, "run_agent_stream", fail_run)
+    manager.set_persistence(FailingPersistence())  # type: ignore[arg-type]
+
+    await runtime_service.execute_run(
+        run_manager=manager,
+        run_id=run_id,
+        session_id="persist_fail",
+        message="hello",
+        model_client=object(),  # type: ignore[arg-type]
+        tools=[],
+        policy=object(),  # type: ignore[arg-type]
+        max_steps=1,
+        max_session_messages=10,
+        project_root=Path.cwd(),
+        persistence=None,
+    )
+
+    state = manager.get_run(run_id)
+    assert state is not None
+    assert state.status == "failed"
+    assert manager.get_active_run_id("persist_fail") is None

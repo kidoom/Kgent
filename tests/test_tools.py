@@ -8,7 +8,9 @@ from app.tools.edit_file import EditFileTool
 from app.tools.list_files import ListFilesTool
 from app.tools.read_file import ReadFileTool
 from app.tools.registry import build_tools, find_tool_by_name
+from app.tools.todo_write import TodoWriteTool
 from app.tools.write_file import WriteFileTool
+from app.runtime.todo_state import TodoStateStore
 
 
 @pytest.mark.asyncio
@@ -152,6 +154,44 @@ async def test_edit_file_blocks_protected_env_file(tmp_path: Path) -> None:
         await tool.call({"path": ".env", "old_text": "secret", "new_text": "public"})
 
     assert target.read_text(encoding="utf-8") == "KGENT_API_KEY=secret"
+
+
+@pytest.mark.asyncio
+async def test_todo_write_updates_session_state() -> None:
+    store = TodoStateStore()
+    tool = TodoWriteTool(session_id="sess_todo", state_store=store)
+
+    result = await tool.call(
+        {
+            "items": [
+                {"id": "a", "text": "read code", "status": "completed"},
+                {"id": "b", "text": "write tests", "status": "in_progress"},
+            ]
+        }
+    )
+
+    assert "[x] a: read code" in result
+    assert "[>] b: write tests" in result
+    assert store.get_state("sess_todo").items[1].status == "in_progress"
+
+
+@pytest.mark.asyncio
+async def test_todo_write_rejects_duplicate_ids_without_mutation() -> None:
+    store = TodoStateStore()
+    tool = TodoWriteTool(session_id="sess_todo", state_store=store)
+    await tool.call({"items": [{"id": "a", "text": "existing", "status": "pending"}]})
+
+    with pytest.raises(ValueError):
+        await tool.call(
+            {
+                "items": [
+                    {"id": "a", "text": "one", "status": "pending"},
+                    {"id": "a", "text": "two", "status": "pending"},
+                ]
+            }
+        )
+
+    assert [item.text for item in store.get_state("sess_todo").items] == ["existing"]
 
 
 def test_registry_includes_mutation_tools_without_schema_risk_level(tmp_path: Path) -> None:

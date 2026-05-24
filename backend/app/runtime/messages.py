@@ -1,4 +1,4 @@
-"""Message and agent-loop data models."""
+﻿"""Message and agent-loop data models."""
 
 from typing import Any, Literal
 
@@ -24,12 +24,14 @@ class ToolResultBlock(BaseModel):
 
 
 class Message(BaseModel):
-    """The minimal message shape used by Kgent V0.1."""
+    """The minimal message shape used by Kgent."""
 
     role: Literal["system", "user", "assistant"]
     content: str | list[ToolUseBlock] | list[ToolResultBlock]
     # Visible plan/reasoning text when the assistant reply also includes tool_use blocks.
     assistant_text: str | None = None
+    # Context-builder messages are sent to the model but never persisted in session history.
+    is_meta: bool = False
 
 
 class ModelResponse(BaseModel):

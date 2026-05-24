@@ -6,13 +6,17 @@ import sys
 from pathlib import Path
 
 from app.core.config import Settings, get_settings
+from app.memory.persistence import PersistenceService, build_persistence_service
 from app.model_client import ModelClientProtocol, build_model_client
 from app.runtime.permissions import AllowAllPolicy, AskPolicy, PermissionPolicy, RiskBasedPolicy, normalize_mode
 from app.runtime.run_manager import RunManager
+from app.runtime.todo_state import TodoStateStore
 from app.tools.registry import build_tools
 
 _run_manager = RunManager()
 _shared_model_client: ModelClientProtocol | None = None
+_persistence: PersistenceService | None = None
+_todo_state_store = TodoStateStore()
 
 
 def _ensure_fake_provider_registered() -> None:
@@ -25,6 +29,24 @@ def _ensure_fake_provider_registered() -> None:
 
 def get_run_manager() -> RunManager:
     return _run_manager
+
+
+def get_todo_state_store() -> TodoStateStore:
+    return _todo_state_store
+
+
+def get_persistence_service() -> PersistenceService:
+    global _persistence
+    if _persistence is None:
+        settings = get_settings()
+        _persistence = build_persistence_service(
+            storage_dir=settings.storage_dir,
+            project_root=settings.project_root,
+            transcript_max_bytes=settings.transcript_max_bytes,
+            disabled=settings.disable_persistence,
+        )
+        _run_manager.set_persistence(_persistence)
+    return _persistence
 
 
 def get_app_settings() -> Settings:
@@ -66,7 +88,21 @@ async def shutdown_shared_model_client() -> None:
         await _shared_model_client.close()
     _shared_model_client = None
     _run_manager.reset()
+    _todo_state_store.reset()
+    global _persistence
+    _persistence = None
 
 
-def build_runtime_tools(settings: Settings):
-    return build_tools(settings.project_root)
+def build_runtime_tools(
+    settings: Settings,
+    *,
+    session_id: str = "default",
+    persistence: PersistenceService | None = None,
+    todo_state_store: TodoStateStore | None = None,
+):
+    return build_tools(
+        settings.project_root,
+        session_id=session_id,
+        persistence=persistence,
+        todo_state_store=todo_state_store,
+    )

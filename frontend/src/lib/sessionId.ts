@@ -16,6 +16,23 @@ export function configuredSessionId(): string | null {
   return null;
 }
 
+export function readStoredSessionId(): string | null {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    return stored || null;
+  } catch {
+    return null;
+  }
+}
+
+export function persistSessionId(sessionId: string): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, sessionId);
+  } catch {
+    // private mode / storage blocked
+  }
+}
+
 /**
  * Resolve a per-browser session id: env override > localStorage > POST /api/sessions.
  * Falls back to web-default only when the backend is unreachable.
@@ -27,7 +44,7 @@ export async function resolveSessionId(): Promise<string> {
   }
 
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = readStoredSessionId();
     if (stored) {
       return stored;
     }
@@ -43,11 +60,7 @@ export async function resolveSessionId(): Promise<string> {
     });
     if (response.ok) {
       const body = (await response.json()) as { session_id: string };
-      try {
-        localStorage.setItem(STORAGE_KEY, body.session_id);
-      } catch {
-        // ignore
-      }
+      persistSessionId(body.session_id);
       return body.session_id;
     }
   } catch {

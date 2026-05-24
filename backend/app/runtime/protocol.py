@@ -15,6 +15,7 @@ AgentEventType = Literal[
     "loop_checkpoint",
     "agent_step",
     "tool_call_started",
+    "todo_state",
     "permission_required",
     "permission_resolved",
     "tool_result",
@@ -217,6 +218,22 @@ def tool_call_started_event(
             "tool_name": tool_name,
             "tool_input": tool_input,
         },
+    )
+
+
+def todo_state_event(
+    *,
+    run_id: str,
+    session_id: str,
+    seq: int,
+    state: dict[str, Any],
+) -> AgentEvent:
+    return AgentEvent(
+        type="todo_state",
+        run_id=run_id,
+        session_id=session_id,
+        seq=seq,
+        payload=state,
     )
 
 

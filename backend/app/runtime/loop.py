@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
+from app.runtime.context_builder import build_model_messages
 from app.runtime.host import AgentHost, CollectingHost, build_permission_request, make_run_started_event
 from app.runtime.messages import (
     AgentResult,
@@ -23,10 +25,13 @@ from app.runtime.protocol import (
     agent_step_event,
     loop_checkpoint_event,
     run_finished_event,
+    todo_state_event,
     tool_call_started_event,
     AgentEvent,
 )
+from app.memory.persistence import PersistenceError, PersistenceService
 from app.memory.session_store import get_or_create_session, trim_session_messages
+from app.runtime.todo_state import TodoStateStore
 from app.tools.base import Tool
 from app.tools.registry import build_tool_schemas, find_tool_by_name
 
@@ -96,6 +101,35 @@ class RunCancelledError(Exception):
     """Raised when a run is cancelled mid-loop."""
 
 
+def _persist_message(
+    persistence: PersistenceService | None,
+    session_id: str,
+    message: Message,
+    *,
+    user_prompt: str | None = None,
+) -> None:
+    if persistence is None:
+        return
+    try:
+        persistence.append_message(session_id, message, user_prompt=user_prompt)
+    except PersistenceError as exc:
+        raise RuntimeError(str(exc)) from exc
+
+
+def _messages_with_todo_reminder(
+    messages: list[Message],
+    *,
+    todo_state_store: TodoStateStore | None,
+    session_id: str,
+) -> list[Message]:
+    if todo_state_store is None:
+        return messages
+    reminder = todo_state_store.reminder_message(session_id)
+    if reminder is None:
+        return messages
+    return [*messages, reminder]
+
+
 async def _emit_step(
     host: AgentHost,
     *,
@@ -118,12 +152,19 @@ async def _run_plan_phase(
     model_client: ModelClient,
     messages: list[Message],
     turn_index: int,
+    *,
+    project_root: Path,
+    persistence: PersistenceService | None,
+    session_id: str,
 ) -> AgentStep:
     """Text-only plan step (debug CLI). Ephemeral runtime prompt is not stored in session."""
     plan_messages = [*messages, Message(role="user", content=PLAN_TURN_USER_PROMPT)]
-    response = await model_client.call_model(plan_messages, tools=[])
+    request_messages = build_model_messages(plan_messages, project_root=project_root)
+    response = await model_client.call_model(request_messages, tools=[])
     plan_text = (response.text or "").strip() or PLAN_FALLBACK_TEXT
-    messages.append(Message(role="assistant", content=plan_text))
+    assistant_message = Message(role="assistant", content=plan_text)
+    messages.append(assistant_message)
+    _persist_message(persistence, session_id, assistant_message)
     return AgentStep(type="think", turn_index=turn_index, content=plan_text)
 
 
@@ -216,16 +257,22 @@ async def run_agent_stream(
     max_session_messages: int | None = None,
     on_trace: AgentTraceCallback | None = None,
     plan_before_act: bool = False,
+    project_root: Path | None = None,
+    persistence: PersistenceService | None = None,
+    todo_state_store: TodoStateStore | None = None,
 ) -> AgentResult:
     if policy is None:
         policy = AllowAllPolicy()
+    effective_project_root = _infer_project_root(tools, project_root)
 
     seq_counter = [1]
     await host.emit(make_run_started_event(run_id, session_id))
     seq_counter[0] = 2
 
     messages = get_or_create_session(session_id)
-    messages.append(Message(role="user", content=message))
+    user_message = Message(role="user", content=message)
+    messages.append(user_message)
+    _persist_message(persistence, session_id, user_message, user_prompt=message)
     if max_session_messages is not None:
         trim_session_messages(messages, max_session_messages)
     await _emit_loop_trace(
@@ -270,10 +317,17 @@ async def run_agent_stream(
                     on_trace=on_trace,
                     checkpoint="before_plan_call",
                     turn_index=turn_index,
-                    messages=plan_messages,
+                    messages=build_model_messages(plan_messages, project_root=effective_project_root),
                     tool_count=0,
                 )
-                think_step = await _run_plan_phase(model_client, messages, turn_index)
+                think_step = await _run_plan_phase(
+                    model_client,
+                    messages,
+                    turn_index,
+                    project_root=effective_project_root,
+                    persistence=persistence,
+                    session_id=session_id,
+                )
                 steps.append(think_step)
                 seq_counter[0] += 1
                 await _emit_step(
@@ -302,12 +356,16 @@ async def run_agent_stream(
                     on_trace=on_trace,
                     checkpoint="before_model_call",
                     turn_index=turn_index,
-                    messages=messages,
+                    messages=build_model_messages(messages, project_root=effective_project_root),
                     tool_count=len(tool_schemas),
                     tool_schemas=tool_schemas,
                 )
-                response = await model_client.call_model(messages=messages, tools=tool_schemas)
+                response = await model_client.call_model(
+                    messages=build_model_messages(messages, project_root=effective_project_root),
+                    tools=tool_schemas,
+                )
                 messages.append(response.assistant_message)
+                _persist_message(persistence, session_id, response.assistant_message)
                 await _emit_loop_trace(
                     host=host,
                     seq_counter=seq_counter,
@@ -330,6 +388,9 @@ async def run_agent_stream(
                     run_id=run_id,
                     session_id=session_id,
                     seq_counter=seq_counter,
+                    project_root=effective_project_root,
+                    persistence=persistence,
+                    todo_state_store=todo_state_store,
                 )
 
             if await host.check_cancelled():
@@ -379,6 +440,7 @@ async def run_agent_stream(
                 )
                 return result
 
+            used_todo_write = any(tool_use.name == "todo_write" for tool_use in response.tool_uses)
             for tool_use in response.tool_uses:
                 if await host.check_cancelled():
                     raise RunCancelledError()
@@ -430,6 +492,16 @@ async def run_agent_stream(
                             tool_input=dict(tool_use.input),
                         )
                     )
+                    if tool_use.name == "todo_write" and not result.is_error and todo_state_store is not None:
+                        seq_counter[0] += 1
+                        await host.emit(
+                            todo_state_event(
+                                run_id=run_id,
+                                session_id=session_id,
+                                seq=seq_counter[0],
+                                state=todo_state_store.get_state(session_id).model_dump(mode="json"),
+                            )
+                        )
 
                 observe_step = AgentStep(
                     type="observe",
@@ -448,18 +520,18 @@ async def run_agent_stream(
                     seq=seq_counter[0],
                     step=observe_step,
                 )
-                messages.append(
-                    Message(
-                        role="user",
-                        content=[
-                            ToolResultBlock(
-                                tool_use_id=tool_use.id,
-                                content=result.content,
-                                is_error=result.is_error,
-                            )
-                        ],
-                    )
+                tool_result_message = Message(
+                    role="user",
+                    content=[
+                        ToolResultBlock(
+                            tool_use_id=tool_use.id,
+                            content=result.content,
+                            is_error=result.is_error,
+                        )
+                    ],
                 )
+                messages.append(tool_result_message)
+                _persist_message(persistence, session_id, tool_result_message)
                 await _emit_loop_trace(
                     host=host,
                     seq_counter=seq_counter,
@@ -471,6 +543,9 @@ async def run_agent_stream(
                     messages=messages,
                     added_steps=[call_step, observe_step],
                 )
+
+            if todo_state_store is not None and not used_todo_write:
+                todo_state_store.record_model_turn_without_todo_write(session_id)
 
         raise RuntimeError("Agent stopped: max steps reached")
 
@@ -499,6 +574,9 @@ async def run_agent(
     plan_before_act: bool = False,
     policy: PermissionPolicy | None = None,
     run_id: str | None = None,
+    project_root: Path | None = None,
+    persistence: PersistenceService | None = None,
+    todo_state_store: TodoStateStore | None = None,
 ) -> AgentResult:
     """Compatibility wrapper over run_agent_stream using CollectingHost."""
     rid = run_id or f"run_{uuid.uuid4().hex[:12]}"
@@ -515,6 +593,9 @@ async def run_agent(
         max_session_messages=max_session_messages,
         on_trace=on_trace,
         plan_before_act=plan_before_act,
+        project_root=project_root,
+        persistence=persistence,
+        todo_state_store=todo_state_store,
     )
     return host.to_agent_result()
 
@@ -531,7 +612,17 @@ async def _run_standard_turn(
     run_id: str = "",
     session_id: str = "default",
     seq_counter: list[int] | None = None,
+    project_root: Path | None = None,
+    persistence: PersistenceService | None = None,
+    todo_state_store: TodoStateStore | None = None,
 ) -> ModelResponse:
+    effective_project_root = _infer_project_root([], project_root)
+    request_session_messages = _messages_with_todo_reminder(
+        messages,
+        todo_state_store=todo_state_store,
+        session_id=session_id,
+    )
+    request_messages = build_model_messages(request_session_messages, project_root=effective_project_root)
     await _emit_loop_trace(
         host=host,
         seq_counter=seq_counter,
@@ -540,12 +631,13 @@ async def _run_standard_turn(
         on_trace=on_trace,
         checkpoint="before_model_call",
         turn_index=turn_index,
-        messages=messages,
+        messages=request_messages,
         tool_count=len(tool_schemas),
         tool_schemas=tool_schemas,
     )
-    response = await model_client.call_model(messages=messages, tools=tool_schemas)
+    response = await model_client.call_model(messages=request_messages, tools=tool_schemas)
     messages.append(response.assistant_message)
+    _persist_message(persistence, session_id, response.assistant_message)
 
     turn_steps: list[AgentStep] = []
     if response.text:
@@ -606,6 +698,16 @@ async def _run_standard_turn(
         )
 
     return response
+
+
+def _infer_project_root(tools: list[Tool], project_root: Path | None) -> Path:
+    if project_root is not None:
+        return project_root.resolve()
+    for tool in tools:
+        candidate = getattr(tool, "project_root", None)
+        if isinstance(candidate, Path):
+            return candidate.resolve()
+    return Path.cwd().resolve()
 
 
 async def execute_tool_use(tool_use: ToolUseBlock, tools: list[Tool]) -> ToolExecutionResult:

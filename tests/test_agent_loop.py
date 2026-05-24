@@ -3,12 +3,24 @@ from typing import Any
 
 import pytest
 
+from app.memory.session_store import get_or_create_session
 from app.runtime.loop import run_agent
 from app.runtime.messages import Message, ModelResponse, ToolResultBlock, ToolUseBlock
 from app.runtime.permissions import AllowAllPolicy, RiskBasedPolicy
 from app.tools.registry import build_tools
 from fake_model import FakeModelClient
 
+
+
+
+class CapturingTextModelClient:
+    def __init__(self):
+        self.calls: list[list[Message]] = []
+
+    async def call_model(self, messages: list[Message], tools: list[dict[str, Any]]) -> ModelResponse:
+        self.calls.append(messages)
+        text = "captured"
+        return ModelResponse(assistant_message=Message(role="assistant", content=text), text=text)
 
 class SingleToolModelClient:
     def __init__(self, tool_use: ToolUseBlock):
@@ -215,3 +227,29 @@ async def test_agent_edit_file_risk_based_denies_without_mutation(tmp_path: Path
     assert call.decision == "deny"
     assert observe.is_error is True
     assert observe.content.startswith("permission_denied:")
+
+
+@pytest.mark.asyncio
+async def test_agent_context_builder_is_request_only(tmp_path: Path) -> None:
+    (tmp_path / "CLAUDE.md").write_text("Use project context.", encoding="utf-8")
+    model = CapturingTextModelClient()
+
+    result = await run_agent(
+        user_input="hello",
+        model_client=model,
+        tools=build_tools(tmp_path),
+        session_id="test-context-builder",
+        project_root=tmp_path,
+    )
+
+    assert result.answer == "captured"
+    assert model.calls
+    request_messages = model.calls[0]
+    assert request_messages[0].role == "system"
+    assert any(message.is_meta for message in request_messages)
+    assert any("Use project context." in str(message.content) for message in request_messages if message.is_meta)
+
+    session_messages = get_or_create_session("test-context-builder")
+    assert all(message.role != "system" for message in session_messages)
+    assert all(message.is_meta is False for message in session_messages)
+    assert [message.role for message in session_messages] == ["user", "assistant"]

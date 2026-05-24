@@ -6,7 +6,7 @@ import asyncio
 import os
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from app.runtime.protocol import (
     AgentEvent,
@@ -20,6 +20,9 @@ from app.runtime.protocol import (
     permission_resolved_event,
     utc_now,
 )
+
+if TYPE_CHECKING:
+    from app.memory.persistence import PersistenceService
 
 EventSubscriber = Callable[[AgentEvent], Awaitable[None] | None]
 ACTIVE_STATUSES: tuple[RunStatus, ...] = ("running", "waiting_permission")
@@ -75,6 +78,10 @@ class RunManager:
         self._session_event_max = _parse_session_event_max(
             os.environ.get("KGENT_SESSION_EVENT_MAX")
         )
+        self._persistence: PersistenceService | None = None
+
+    def set_persistence(self, persistence: PersistenceService | None) -> None:
+        self._persistence = persistence
 
     def _slim_for_history(self, event: AgentEvent) -> AgentEvent:
         if event.type != "loop_checkpoint":
@@ -116,6 +123,10 @@ class RunManager:
     def get_session_events_after(self, session_id: str, after_seq: int) -> list[AgentEvent]:
         return [event for event in self._session_events.get(session_id, []) if event.seq > after_seq]
 
+    def clear_session_history(self, session_id: str) -> None:
+        self._session_events.pop(session_id, None)
+        self._session_seq.pop(session_id, None)
+
     def _next_session_seq(self, session_id: str) -> int:
         self._session_seq[session_id] = self._session_seq.get(session_id, 0) + 1
         return self._session_seq[session_id]
@@ -132,6 +143,15 @@ class RunManager:
             history = self._session_events.setdefault(session_id, [])
             history.append(self._slim_for_history(session_event))
             self._trim_session_history(session_id)
+            if self._persistence is not None:
+                try:
+                    self._persistence.append_agent_event(session_id, session_event)
+                except Exception as exc:
+                    from app.memory.persistence import PersistenceError
+
+                    if isinstance(exc, PersistenceError):
+                        raise RunManagerError(str(exc)) from exc
+                    raise
         subscribers = list(self._session_subscribers.get(session_id, []))
         for subscriber in subscribers:
             try:

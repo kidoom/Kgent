@@ -92,6 +92,14 @@ class FakeModelClient:
         return None
 
     def _maybe_plan_tool(self, text: str) -> ToolUseBlock | None:
+        todo_request = _extract_todo_write_request(text)
+        if todo_request is not None:
+            return ToolUseBlock(
+                id=_tool_use_id(),
+                name="todo_write",
+                input={"items": todo_request},
+            )
+
         expression = _extract_expression(text)
         if expression is not None:
             return ToolUseBlock(
@@ -209,6 +217,17 @@ def _extract_write_request(text: str) -> tuple[str, str] | None:
     if not path:
         return None
     return path, content
+
+
+def _extract_todo_write_request(text: str) -> list[dict[str, str]] | None:
+    lowered = text.lower()
+    if "todo_clear" in lowered:
+        return []
+    if "todo_write" not in lowered:
+        return None
+    match = re.search(r"todo_write\s+(.+)", text, re.IGNORECASE | re.DOTALL)
+    item_text = match.group(1).strip() if match else "continue the task"
+    return [{"id": "t1", "text": item_text or "continue the task", "status": "in_progress"}]
 
 
 def _extract_file_path(text: str) -> str | None:

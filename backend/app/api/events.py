@@ -15,13 +15,14 @@ from fastapi.responses import StreamingResponse
 
 from app.api.deps import get_run_manager
 from app.api.errors import api_error
-from app.api.sessions import SESSION_ID_PATTERN, _validate_session_id
+from app.memory.session_id import validate_session_id
 from app.runtime.protocol import AgentEvent, heartbeat_event
 from app.runtime.run_manager import RunManager
 
 router = APIRouter()
 
 HEARTBEAT_INTERVAL_SEC = 15.0
+SSE_CONNECTED_PREAMBLE = ": connected\n\n"
 
 
 def _format_sse(event: AgentEvent) -> str:
@@ -54,6 +55,9 @@ async def _session_event_stream(
 
     run_manager.subscribe_session(session_id, subscriber)
     try:
+        # Flush headers/body immediately so dev proxies and EventSource can mark
+        # the connection open even when there are no replayable events yet.
+        yield SSE_CONNECTED_PREAMBLE
         for event in run_manager.get_session_events_after(session_id, after_seq):
             yield _format_sse(event)
 
@@ -82,8 +86,10 @@ async def session_events(
     from_seq: int | None = None,
     run_manager: RunManager = Depends(get_run_manager),
 ) -> StreamingResponse:
-    if not SESSION_ID_PATTERN.fullmatch(session_id):
-        _validate_session_id(session_id)
+    try:
+        validate_session_id(session_id)
+    except ValueError as exc:
+        raise api_error(400, error_type="validation_error", message=str(exc)) from exc
 
     after_seq = _parse_from_seq(request, from_seq)
 

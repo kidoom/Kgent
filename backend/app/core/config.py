@@ -21,6 +21,9 @@ _ENV_MAP = {
     "KGENT_PROJECT_ROOT": "project_root",
     "KGENT_MAX_SESSION_MESSAGES": "max_session_messages",
     "KGENT_PERMISSION_MODE": "permission_mode",
+    "KGENT_STORAGE_DIR": "storage_dir",
+    "KGENT_DISABLE_PERSISTENCE": "disable_persistence",
+    "KGENT_TRANSCRIPT_MAX_BYTES": "transcript_max_bytes",
 }
 
 _DEFAULTS = {
@@ -32,6 +35,9 @@ _DEFAULTS = {
     "project_root": ".",
     "max_session_messages": 100,
     "permission_mode": "risk_based",
+    "storage_dir": "",
+    "disable_persistence": "0",
+    "transcript_max_bytes": 52428800,
 }
 
 _VALID_PERMISSION_MODES = ("allow_all", "risk_based", "interactive")
@@ -89,6 +95,9 @@ class Settings:
     project_root: Path = Path.cwd()
     max_session_messages: int = 100
     permission_mode: str = "risk_based"
+    storage_dir: Path = Path(".kgent")
+    disable_persistence: bool = False
+    transcript_max_bytes: int = 52428800
     dotenv_file: Path | None = None
 
     @property
@@ -105,6 +114,23 @@ def _resolve_project_root(raw: str) -> Path:
     if raw in {".", ""}:
         return find_repo_root()
     return Path(raw).resolve()
+
+
+def _resolve_storage_dir(raw: str, project_root: Path) -> Path:
+    if raw in {"", ".kgent"}:
+        return (project_root / ".kgent").resolve()
+    candidate = Path(raw)
+    if not candidate.is_absolute():
+        candidate = project_root / candidate
+    resolved = candidate.resolve()
+    root = project_root.resolve()
+    if resolved != root and root not in resolved.parents:
+        raise ValueError("KGENT_STORAGE_DIR must stay inside project root")
+    return resolved
+
+
+def _parse_bool(raw: str) -> bool:
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _build_settings(dotenv_first: bool) -> Settings:
@@ -153,15 +179,29 @@ def _build_settings(dotenv_first: bool) -> Settings:
     raw_mode = _get("permission_mode").strip().lower().replace("-", "_")
     permission_mode = raw_mode if raw_mode in _VALID_PERMISSION_MODES else _DEFAULTS["permission_mode"]
 
+    project_root = _resolve_project_root(_get("project_root"))
+    storage_dir = _resolve_storage_dir(_get("storage_dir"), project_root)
+
+    try:
+        transcript_max_bytes = int(_get("transcript_max_bytes"))
+    except (ValueError, TypeError):
+        transcript_max_bytes = _DEFAULTS["transcript_max_bytes"]
+    transcript_max_bytes = max(transcript_max_bytes, 1024)
+
+    disable_persistence = _parse_bool(_get("disable_persistence"))
+
     return Settings(
         provider=provider,
         model=model,
         api_key=api_key,
         base_url=base_url,
         max_steps=max_steps,
-        project_root=_resolve_project_root(_get("project_root")),
+        project_root=project_root,
         max_session_messages=max_session_messages,
         permission_mode=permission_mode,
+        storage_dir=storage_dir,
+        disable_persistence=disable_persistence,
+        transcript_max_bytes=transcript_max_bytes,
         dotenv_file=env_path if env_path.exists() else None,
     )
 

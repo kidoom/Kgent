@@ -49,10 +49,16 @@ export class RuntimeHttpClient {
   private reconnectTimer: number | null = null;
   private reconnectAttempts = 0;
 
-  constructor(sessionId: string, onEvent: EventHandler, onStatus: StatusHandler) {
+  constructor(
+    sessionId: string,
+    onEvent: EventHandler,
+    onStatus: StatusHandler,
+    initialFromSeq = 0,
+  ) {
     this.sessionId = sessionId;
     this.onEvent = onEvent;
     this.onStatus = onStatus;
+    this.lastSeq = initialFromSeq;
   }
 
   get connected(): boolean {
@@ -61,6 +67,10 @@ export class RuntimeHttpClient {
 
   get lastEventSeq(): number {
     return this.lastSeq;
+  }
+
+  setLastSeq(seq: number): void {
+    this.lastSeq = seq;
   }
 
   async connect(): Promise<void> {

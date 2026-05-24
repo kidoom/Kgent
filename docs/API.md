@@ -1,6 +1,6 @@
 # Kgent Runtime API 文档
 
-> 版本：V0.2.3（HTTP + SSE；已移除 legacy WebSocket）  
+> 版本：V0.5（Session Persistence & Transcript Replay）  
 > 开发基础 URL：`http://127.0.0.1:8000`（HTTP）或 `https://127.0.0.1:8443`（uvicorn / `scripts/run_server.py` 直挂 TLS 时）  
 > 路由实现：`backend/app/main.py`（挂载）· `backend/app/api/sessions.py`（命令）· `backend/app/api/events.py`（SSE）
 
@@ -13,6 +13,9 @@ Kgent 前端主链路采用 **HTTP POST 发命令 + SSE 收事件**：
 
 ```text
 POST /api/sessions                         →  创建/确认 session id（可选）
+GET  /api/sessions                         →  侧边栏 session 列表
+GET  /api/sessions/{session_id}            →  session 元数据
+GET  /api/sessions/{session_id}/transcript →  完整 JSONL transcript 回放
 POST /api/sessions/{session_id}/messages   →  启动 run
 GET  /api/sessions/{session_id}/events     →  SSE 事件流
 POST /api/runs/{run_id}/permission         →  权限 allow/deny
@@ -150,13 +153,89 @@ uvicorn app.main:app --host 0.0.0.0 --port 8443 \
 { "session_id": "sess_a1b2c3d4e5f6" }
 ```
 
-不传 `session_id` 时服务端自动生成 `sess_{12位hex}`。
+不传 `session_id` 时服务端自动生成 `sess_{12位hex}`，并写入 `.kgent/sessions/session_index.json`。
 
 **错误**
 
 | 状态码 | 场景 |
 |--------|------|
 | `400` | 指定的 `session_id` 不符合 `^[A-Za-z0-9_-]{1,80}$` |
+
+---
+
+### GET /api/sessions
+
+返回本地持久化的 session 列表（按 `updated_at` 降序），供前端侧边栏使用。
+
+**响应 200**
+
+```json
+{
+  "sessions": [
+    {
+      "session_id": "sess_abc",
+      "title": "讲解项目结构",
+      "first_prompt": "讲解项目结构",
+      "last_prompt": "继续",
+      "project_root": "D:/Kgent",
+      "created_at": "2026-05-22T10:00:00Z",
+      "updated_at": "2026-05-22T11:00:00Z",
+      "message_count": 12,
+      "event_count": 40
+    }
+  ]
+}
+```
+
+---
+
+### GET /api/sessions/{session_id}
+
+返回单个 session 的元数据。
+
+**错误**
+
+| 状态码 | 场景 |
+|--------|------|
+| `404` | 未知 session |
+
+---
+
+### GET /api/sessions/{session_id}/transcript
+
+返回完整 transcript entries（JSONL 反序列化）。损坏行跳过并在 `warnings` 中报告。
+
+**响应 200**
+
+```json
+{
+  "session_id": "sess_abc",
+  "entries": [
+    {
+      "entry_id": "evt_1",
+      "type": "message",
+      "created_at": "2026-05-22T10:00:00Z",
+      "project_root": "D:/Kgent",
+      "schema_version": 1,
+      "payload": {
+        "role": "user",
+        "content": "hello",
+        "is_meta": false
+      }
+    }
+  ],
+  "warnings": []
+}
+```
+
+**错误**
+
+| 状态码 | 场景 |
+|--------|------|
+| `404` | 未知 session |
+| `409` | transcript 超过 `KGENT_TRANSCRIPT_MAX_BYTES`（`transcript_too_large`） |
+
+持久化目录默认 `<project_root>/.kgent`，可通过 `KGENT_STORAGE_DIR` 配置；`KGENT_DISABLE_PERSISTENCE=1` 禁用写入。
 
 ---
 

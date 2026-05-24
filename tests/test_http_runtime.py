@@ -98,6 +98,7 @@ def live_server_url(server_project_root: Path) -> str:
     env = os.environ.copy()
     env["KGENT_PROVIDER"] = "fake"
     env["KGENT_PROJECT_ROOT"] = str(server_project_root)
+    env["KGENT_STORAGE_DIR"] = str(server_project_root / ".kgent")
     env["KGENT_PERMISSION_MODE"] = "interactive"
     env["PYTHONPATH"] = str(_REPO_ROOT / "backend") + os.pathsep + str(_REPO_ROOT / "tests")
 
@@ -518,3 +519,91 @@ async def test_sse_reconnect_replays_from_seq(live_server_url: str, monkeypatch)
                 pass
 
     assert all(event["seq"] > last_seq for event in replay)
+
+
+@pytest.mark.asyncio
+async def test_list_sessions_returns_created_session(api_client: httpx.AsyncClient) -> None:
+    created = await api_client.post("/api/sessions", json={})
+    assert created.status_code == 200
+    session_id = created.json()["session_id"]
+
+    listed = await api_client.get("/api/sessions")
+    assert listed.status_code == 200
+    sessions = listed.json()["sessions"]
+    assert any(item["session_id"] == session_id for item in sessions)
+
+
+@pytest.mark.asyncio
+async def test_delete_session_removes_session_record(api_client: httpx.AsyncClient) -> None:
+    session_id = "http_delete"
+    created = await api_client.post("/api/sessions", json={"session_id": session_id})
+    assert created.status_code == 200
+
+    deleted = await api_client.delete(f"/api/sessions/{session_id}")
+    assert deleted.status_code == 200
+    assert deleted.json() == {"session_id": session_id, "deleted": True}
+
+    listed = await api_client.get("/api/sessions")
+    assert listed.status_code == 200
+    assert all(item["session_id"] != session_id for item in listed.json()["sessions"])
+
+    missing = await api_client.get(f"/api/sessions/{session_id}/transcript")
+    assert missing.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_transcript_after_run(live_server_url: str, monkeypatch) -> None:
+    monkeypatch.setenv("KGENT_PERMISSION_MODE", "risk_based")
+    reload_settings()
+    session_id = "http_transcript"
+
+    async with _make_client(live_server_url) as client:
+        create = await client.post("/api/sessions", json={"session_id": session_id})
+        assert create.status_code == 200
+
+    events, response = await _run_with_sse(
+        live_server_url,
+        session_id=session_id,
+        message="帮我算一下 12 * 8 + 6",
+        until={"run_finished", "run_failed", "error"},
+    )
+    assert response is not None and response.status_code == 200
+    assert any(event.get("type") == "run_finished" for event in events)
+
+    async with _make_client(live_server_url) as client:
+        transcript = await client.get(f"/api/sessions/{session_id}/transcript")
+        assert transcript.status_code == 200
+        body = transcript.json()
+        assert body["session_id"] == session_id
+        message_entries = [entry for entry in body["entries"] if entry["type"] == "message"]
+        assert message_entries
+        assert any(
+            "12 * 8 + 6" in str(entry["payload"].get("content", ""))
+            for entry in message_entries
+            if entry["payload"].get("role") == "user"
+        )
+        event_entries = [entry for entry in body["entries"] if entry["type"] == "agent_event"]
+        assert event_entries
+
+
+@pytest.mark.asyncio
+async def test_http_todo_write_persists_todo_state(live_server_url: str, monkeypatch) -> None:
+    monkeypatch.setenv("KGENT_PERMISSION_MODE", "risk_based")
+    reload_settings()
+    session_id = "http_todo"
+
+    events, response = await _run_with_sse(
+        live_server_url,
+        session_id=session_id,
+        message="todo_write implement m0.5.2",
+        until={"run_finished", "run_failed", "error"},
+    )
+    assert response is not None and response.status_code == 200
+    assert any(event.get("type") == "todo_state" for event in events)
+
+    async with _make_client(live_server_url) as client:
+        transcript = await client.get(f"/api/sessions/{session_id}/transcript")
+        assert transcript.status_code == 200
+        todo_entries = [entry for entry in transcript.json()["entries"] if entry["type"] == "todo_state"]
+        assert todo_entries
+        assert todo_entries[-1]["payload"]["items"][0]["status"] == "in_progress"

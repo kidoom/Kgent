@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from datetime import datetime
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -13,6 +14,11 @@ class CreateSessionRequest(BaseModel):
 
 class CreateSessionResponse(BaseModel):
     session_id: str
+
+
+class DeleteSessionResponse(BaseModel):
+    session_id: str
+    deleted: bool = True
 
 
 class SendMessageRequest(BaseModel):
@@ -34,3 +40,39 @@ class PermissionDecisionRequest(BaseModel):
 class CommandAck(BaseModel):
     run_id: str
     accepted: bool = True
+
+
+class SessionSummary(BaseModel):
+    session_id: str
+    title: str = ""
+    first_prompt: str = ""
+    last_prompt: str = ""
+    project_root: str
+    created_at: datetime
+    updated_at: datetime
+    message_count: int = 0
+    event_count: int = 0
+
+
+class SessionListResponse(BaseModel):
+    sessions: list[SessionSummary]
+
+
+class SessionDetailResponse(SessionSummary):
+    transcript_path: str = ""
+
+
+class TranscriptEntryResponse(BaseModel):
+    entry_id: str
+    session_id: str
+    type: str
+    created_at: datetime
+    project_root: str
+    schema_version: int = 1
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class TranscriptResponse(BaseModel):
+    session_id: str
+    entries: list[TranscriptEntryResponse]
+    warnings: list[str] = Field(default_factory=list)

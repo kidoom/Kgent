@@ -1,26 +1,39 @@
-"""In-process short-term session memory (V0.1.1)."""
+﻿"""In-process short-term session memory (V0.1.1)."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
 
 from app.runtime.messages import Message
-from app.runtime.prompts import SYSTEM_PROMPT
 
 SESSIONS: dict[str, list[Message]] = {}
 
 
-def get_or_create_session(session_id: str) -> list[Message]:
-    return SESSIONS.setdefault(
-        session_id,
-        [Message(role="system", content=SYSTEM_PROMPT)],
-    )
+def get_or_create_session(
+    session_id: str,
+    *,
+    hydrate_fn: Callable[[str], list[Message]] | None = None,
+) -> list[Message]:
+    # Session history stores only real user/assistant/tool observation messages.
+    # Context is injected just-in-time by runtime.context_builder.
+    if session_id not in SESSIONS and hydrate_fn is not None:
+        SESSIONS[session_id] = hydrate_fn(session_id)
+    return SESSIONS.setdefault(session_id, [])
+
+
+def has_session(session_id: str) -> bool:
+    return session_id in SESSIONS
+
+
+def delete_session(session_id: str) -> bool:
+    return SESSIONS.pop(session_id, None) is not None
 
 
 def trim_session_messages(messages: list[Message], max_messages: int) -> None:
-    """Keep the system prompt and the most recent tail of the session."""
-    if max_messages < 2:
-        max_messages = 2
+    """Keep the most recent real session messages."""
+    if max_messages < 1:
+        max_messages = 1
     if len(messages) <= max_messages:
-        return
-    if messages and messages[0].role == "system":
-        messages[:] = [messages[0], *messages[-(max_messages - 1) :]]
         return
     messages[:] = messages[-max_messages:]
 

@@ -10,10 +10,11 @@ V0.2:   工具权限层 + 风险分级                         [done]  → §18
 V0.2.1: 交互式 Runtime + 步骤级事件协议                  [done]  → §18.5
 V0.2.2: HTTP + SSE + React 前端                       [done]  → §18.6
 V0.2.3: 移除 legacy WebSocket transport               [done]  → §18.7
-V0.3: safe tools 并发执行
-V0.4: context builder + system/user context 分层
-V0.5: context compression
-V0.6: memory management
+V0.3: safe file mutation tools                         [done]
+V0.4: context builder + system/user context 分层      [done]
+V0.5: Session Persistence & Transcript Replay         [done]
+V0.6: context compression
+V0.7: memory management
 V0.7: dynamic tool loading
 V0.8: streaming output / streaming tool execution（token 级）
 V0.9: HTTP/SSE 鉴权 + session 安全加固
