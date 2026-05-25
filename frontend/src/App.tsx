@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { LoaderCircleIcon, PanelRightIcon, SparklesIcon } from "lucide-react";
 
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 import { ChatPanel } from "./components/ChatPanel";
 import { DebugDrawer } from "./components/DebugDrawer";
 import { PermissionDialog } from "./components/PermissionDialog";
@@ -20,6 +26,43 @@ import {
 import { configuredSessionId, persistSessionId, readStoredSessionId } from "./lib/sessionId";
 import { latestTodoState } from "./lib/todoState";
 import { chatMessagesFromTranscript } from "./lib/transcript";
+
+function AppStatePanel({
+  title,
+  description,
+  detail,
+  destructive = false,
+}: {
+  title: string;
+  description: string;
+  detail?: string | null;
+  destructive?: boolean;
+}) {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background p-6">
+      <Card className="w-full max-w-md">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Badge variant={destructive ? "destructive" : "secondary"}>
+              <SparklesIcon data-icon="inline-start" />
+              Kgent
+            </Badge>
+          </div>
+          <CardTitle>{title}</CardTitle>
+          <CardDescription>{description}</CardDescription>
+        </CardHeader>
+        {detail ? (
+          <CardContent>
+            <Alert variant={destructive ? "destructive" : "default"}>
+              <AlertTitle>{destructive ? "Startup error" : "Status"}</AlertTitle>
+              <AlertDescription>{detail}</AlertDescription>
+            </Alert>
+          </CardContent>
+        ) : null}
+      </Card>
+    </div>
+  );
+}
 
 export function App() {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -133,25 +176,30 @@ export function App() {
 
   if (loadingSessions && !activeSessionId) {
     return (
-      <div className="app">
-        <p className="muted">Loading sessions...</p>
-      </div>
+      <AppStatePanel
+        title="Loading sessions"
+        description="Pulling your saved threads and workspace state into the app."
+      />
     );
   }
 
   if (bootError) {
     return (
-      <div className="app">
-        <div className="banner banner-error">{bootError}</div>
-      </div>
+      <AppStatePanel
+        title="Couldn't start Kgent"
+        description="The frontend connected, but session bootstrapping did not finish."
+        detail={bootError}
+        destructive
+      />
     );
   }
 
   if (!activeSessionId) {
     return (
-      <div className="app">
-        <p className="muted">No sessions available.</p>
-      </div>
+      <AppStatePanel
+        title="No sessions available"
+        description="Create a new thread to begin working with Kgent."
+      />
     );
   }
 
@@ -204,8 +252,10 @@ function AppShell({
 }) {
   const [debugOpen, setDebugOpen] = useState(() => {
     if (typeof window === "undefined") return true;
-    return window.innerWidth >= 1180;
+    return window.innerWidth >= 1280;
   });
+  const [workspaceError, setWorkspaceError] = useState<string | null>(null);
+
   const lastHistoricalSeq = useMemo(
     () => maxAgentEventSeq(transcriptEntries),
     [transcriptEntries],
@@ -249,11 +299,12 @@ function AppShell({
 
   const handleSend = async (message: string) => {
     onPendingUserMessage(message);
+    setWorkspaceError(null);
     try {
       await sendMessage(message);
     } catch (error) {
       onPendingUserMessage(null);
-      alert(error instanceof Error ? error.message : String(error));
+      setWorkspaceError(error instanceof Error ? error.message : String(error));
     }
   };
 
@@ -273,86 +324,143 @@ function AppShell({
       : null;
 
   return (
-    <div className={`app app-workspace ${debugOpen ? "debug-open" : "debug-closed"}`}>
-      <SessionSidebar
-        sessions={sessions}
-        activeSessionId={activeSessionId}
-        loading={false}
-        onSelect={onSelectSession}
-        onCreate={() => void onCreateSession()}
-        onDelete={(sessionId) => {
-          void onDeleteSession(sessionId).catch((error) => {
-            alert(error instanceof Error ? error.message : String(error));
-          });
-        }}
-      />
-
-      <div className="workspace-main">
-        <StatusBar
-          connectionStatus={connectionStatus}
-          connectionDetail={connectionDetail}
-          sessionId={turn.sessionId}
-          runId={turn.runId}
-          phase={turn.phase}
-          onReconnect={reconnect}
+    <>
+      <div
+        className={cn(
+          "flex h-screen min-h-0 flex-col overflow-hidden bg-background lg:grid lg:grid-cols-[320px_minmax(0,1fr)]",
+          debugOpen && "xl:grid-cols-[320px_minmax(0,1fr)_384px]",
+          !debugOpen && "xl:grid-cols-[320px_minmax(0,1fr)]",
+        )}
+      >
+        <SessionSidebar
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          loading={false}
+          onSelect={onSelectSession}
+          onCreate={() => void onCreateSession()}
+          onDelete={(sessionId) => {
+            setWorkspaceError(null);
+            void onDeleteSession(sessionId).catch((error) => {
+              setWorkspaceError(error instanceof Error ? error.message : String(error));
+            });
+          }}
         />
 
-        <main className="chat-workspace">
-          <header className="chat-workspace-header">
-            <div>
-              <h1>Kgent</h1>
-              <p className="muted">Local agent workspace</p>
-            </div>
-            <button
-              type="button"
-              className="btn-secondary debug-toggle"
-              aria-expanded={debugOpen}
-              onClick={() => setDebugOpen((open) => !open)}
-            >
-              {debugOpen ? "Hide debug" : "Show debug"}
-            </button>
-          </header>
-
-          {turn.error ? <div className="banner banner-error chat-error">{turn.error}</div> : null}
-          {loadingTranscript ? <p className="muted loading-transcript">Loading transcript...</p> : null}
-
-          <TranscriptView
-            messages={chatMessages}
-            pendingUserMessage={pendingUserMessage}
-            liveAssistantAnswer={liveAssistantAnswer}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden lg:h-screen">
+          <StatusBar
+            connectionStatus={connectionStatus}
+            connectionDetail={connectionDetail}
+            sessionId={turn.sessionId}
+            runId={turn.runId}
+            phase={turn.phase}
+            onReconnect={reconnect}
           />
 
-          <div className="composer-shell">
-            <ChatPanel disabled={inputDisabled} onSend={handleSend} />
-          </div>
-        </main>
+          <main className="mx-auto flex min-h-0 flex-1 w-full max-w-5xl flex-col gap-4 overflow-hidden px-4 py-4 lg:px-6 lg:py-6">
+            <header className="shrink-0 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Badge variant="secondary">
+                    <SparklesIcon data-icon="inline-start" />
+                    Agent workspace
+                  </Badge>
+                  {loadingTranscript ? (
+                    <Badge variant="outline">
+                      <LoaderCircleIcon data-icon="inline-start" className="animate-spin" />
+                      Syncing transcript
+                    </Badge>
+                  ) : null}
+                </div>
+                <div className="space-y-1">
+                  <h1 className="text-2xl font-semibold tracking-tight">Build with Kgent</h1>
+                  <p className="max-w-2xl text-sm text-muted-foreground">
+                    Keep the conversation, live run state, and full execution trail in one place.
+                  </p>
+                </div>
+              </div>
+
+              <Button variant="outline" size="sm" onClick={() => setDebugOpen((open) => !open)}>
+                <PanelRightIcon data-icon="inline-start" />
+                {debugOpen ? "Hide runtime" : "Show runtime"}
+              </Button>
+            </header>
+
+            {workspaceError ? (
+              <Alert variant="destructive">
+                <AlertTitle>Action failed</AlertTitle>
+                <AlertDescription>{workspaceError}</AlertDescription>
+              </Alert>
+            ) : null}
+
+            {turn.error ? (
+              <Alert variant="destructive">
+                <AlertTitle>Run error</AlertTitle>
+                <AlertDescription>{turn.error}</AlertDescription>
+              </Alert>
+            ) : null}
+
+            <TranscriptView
+              messages={chatMessages}
+              pendingUserMessage={pendingUserMessage}
+              liveAssistantAnswer={liveAssistantAnswer}
+            />
+
+            <div className="shrink-0 bg-background pt-2">
+              <ChatPanel disabled={inputDisabled} onSend={handleSend} />
+            </div>
+          </main>
+        </div>
+
+        {debugOpen ? (
+          <aside className="hidden h-screen min-h-0 overflow-hidden border-l border-border bg-muted/20 xl:block">
+            <DebugDrawer
+              events={mergedTraceEvents}
+              connectionStatus={connectionStatus}
+              connectionDetail={connectionDetail}
+              sessionId={turn.sessionId}
+              runId={turn.runId}
+              phase={turn.phase}
+              answer={displayAnswer}
+              error={turn.error}
+              isWaiting={isWaiting}
+              todoState={todoState}
+              onClose={() => setDebugOpen(false)}
+              onReconnect={reconnect}
+            />
+          </aside>
+        ) : null}
       </div>
 
       {debugOpen ? (
-        <DebugDrawer
-          events={mergedTraceEvents}
-          connectionStatus={connectionStatus}
-          connectionDetail={connectionDetail}
-          sessionId={turn.sessionId}
-          runId={turn.runId}
-          phase={turn.phase}
-          answer={displayAnswer}
-          error={turn.error}
-          isWaiting={isWaiting}
-          todoState={todoState}
-          onClose={() => setDebugOpen(false)}
-          onReconnect={reconnect}
-        />
+        <aside
+          className="fixed inset-y-0 right-0 z-40 w-full max-w-[26rem] border-l border-border bg-background shadow-xl xl:hidden"
+          aria-label="Runtime panel"
+        >
+          <DebugDrawer
+            events={mergedTraceEvents}
+            connectionStatus={connectionStatus}
+            connectionDetail={connectionDetail}
+            sessionId={turn.sessionId}
+            runId={turn.runId}
+            phase={turn.phase}
+            answer={displayAnswer}
+            error={turn.error}
+            isWaiting={isWaiting}
+            todoState={todoState}
+            onClose={() => setDebugOpen(false)}
+            onReconnect={reconnect}
+          />
+        </aside>
       ) : null}
 
-      {turn.pendingPermission && (
+      {turn.pendingPermission ? (
         <PermissionDialog
           request={turn.pendingPermission}
           onAllow={() => resolvePermission("allow")}
           onDeny={() => resolvePermission("deny")}
           onCancelRun={cancelRun}
         />
-      )}
-    </div>
+      ) : null}
+    </>
   );
 }

@@ -6,7 +6,9 @@ export type StatusHandler = (status: ConnectionStatus, detail?: string) => void;
 function apiBase(): string {
   const raw = import.meta.env.VITE_API_BASE;
   if (raw === undefined || raw === "") {
-    return "";
+    return typeof window !== "undefined" && window.location.protocol === "file:"
+      ? "http://127.0.0.1:8000"
+      : "";
   }
   return raw.replace(/\/$/, "");
 }
@@ -124,7 +126,7 @@ export class RuntimeHttpClient {
       es.close();
       this.eventSource = null;
       if (this.shouldReconnect) {
-        this.onStatus("disconnected", "SSE connection lost — retrying…");
+        this.onStatus("disconnected", "SSE connection lost, retrying...");
         this.scheduleReconnect();
       }
     };

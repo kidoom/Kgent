@@ -8,11 +8,16 @@ from pathlib import Path
 from app.model_client import ModelClientError, ModelClientProtocol
 from app.memory.persistence import PersistenceService
 from app.runtime.loop import RunCancelledError, run_agent_stream
+from app.runtime.messages import Message
 from app.runtime.protocol import AgentEvent
 from app.runtime.run_manager import RunManager, RunManagerError, RunManagerHost
 from app.runtime.permissions import PermissionPolicy
 from app.runtime.todo_state import TodoStateStore
 
+TITLE_PROMPT = (
+    "Summarize the conversation above into a very short title (5-8 words) "
+    "that captures the main topic. Reply with ONLY the title text, no quotes, no punctuation at the end."
+)
 
 _active_tasks: dict[str, asyncio.Task[None]] = {}
 
@@ -74,6 +79,11 @@ async def execute_run(
             persistence=persistence,
             todo_state_store=todo_state_store,
         )
+        await _maybe_generate_title(
+            model_client=model_client,
+            persistence=persistence,
+            session_id=session_id,
+        )
     except RunCancelledError:
         pass
     except ModelClientError as exc:
@@ -99,6 +109,65 @@ async def execute_run(
         )
     finally:
         _active_tasks.pop(run_id, None)
+
+
+async def _maybe_generate_title(
+    *,
+    model_client: ModelClientProtocol,
+    persistence: PersistenceService | None,
+    session_id: str,
+) -> None:
+    if persistence is None or persistence.disabled:
+        return
+
+    meta = persistence.get_session(session_id)
+    if meta is None:
+        return
+
+    if meta.first_prompt and meta.title != meta.first_prompt[:60]:
+        return
+
+    messages, _warnings = persistence.hydrate_messages(session_id)
+    if not messages:
+        return
+
+    conversation_text = _build_title_conversation(messages)
+    if not conversation_text.strip():
+        return
+
+    try:
+        title_messages = [
+            Message(role="user", content=f"{conversation_text}\n\n{TITLE_PROMPT}"),
+        ]
+        response = await model_client.call_model(title_messages, tools=[])
+        title = (response.text or "").strip()
+        if title and len(title) <= 80:
+            persistence.append_session_meta(session_id, {"title": title})
+    except (ModelClientError, RuntimeError, OSError):
+        pass
+
+
+def _build_title_conversation(messages: list[Message], max_chars: int = 1200) -> str:
+    parts: list[str] = []
+    total = 0
+    for msg in messages:
+        if msg.is_meta:
+            continue
+        if msg.role == "user" and isinstance(msg.content, str):
+            label = "User"
+            text = msg.content
+        elif msg.role == "assistant" and isinstance(msg.content, str):
+            label = "Assistant"
+            text = msg.content
+        else:
+            continue
+        snippet = text[:500]
+        line = f"{label}: {snippet}"
+        if total + len(line) > max_chars:
+            break
+        parts.append(line)
+        total += len(line)
+    return "\n".join(parts)
 
 
 def schedule_run(**kwargs) -> asyncio.Task[None]:

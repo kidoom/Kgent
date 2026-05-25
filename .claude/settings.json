@@ -8,7 +8,8 @@
       "PowerShell(Get-Content *)",
       "PowerShell(Get-Command *)",
       "PowerShell(Test-Path *)",
-      "PowerShell(Select-String *)"
+      "PowerShell(Select-String *)",
+      "PowerShell(taskkill /PID 31248 /F)"
     ]
   }
 }

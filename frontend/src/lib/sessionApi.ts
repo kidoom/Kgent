@@ -30,7 +30,10 @@ export interface TranscriptResponse {
 
 function apiPath(path: string): string {
   const raw = import.meta.env.VITE_API_BASE;
-  const base = raw === undefined || raw === "" ? "" : raw.replace(/\/$/, "");
+  const isPackagedDesktop =
+    typeof window !== "undefined" && window.location.protocol === "file:";
+  const fallbackBase = isPackagedDesktop ? "http://127.0.0.1:8000" : "";
+  const base = raw === undefined || raw === "" ? fallbackBase : raw.replace(/\/$/, "");
   const normalized = path.startsWith("/") ? path : `/${path}`;
   return base ? `${base}${normalized}` : normalized;
 }

@@ -1,3 +1,7 @@
+import { BracesIcon, ChevronsRightIcon, CommandIcon, MessageSquareTextIcon, WrenchIcon } from "lucide-react";
+
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import { buildLoopStory, type StoryPhase, type ToolSchema } from "../lib/loopStory";
 import { formatMessageContent, type DebugMessage } from "../lib/formatMessage";
 import type { AgentEvent } from "../types/protocol";
@@ -7,26 +11,97 @@ interface Props {
 }
 
 const PHASE_LABELS: Record<StoryPhase["kind"], string> = {
-  prompt: "call_model — 请求拼装",
-  think: "模型输出 · 思考",
-  tool_call: "模型输出 · 工具调用",
-  tool_result: "工具观察结果 (tool_result)",
-  final: "本轮最终答复",
+  prompt: "Model request",
+  think: "Model reasoning",
+  tool_call: "Tool call",
+  tool_result: "Tool result",
+  final: "Final response",
 };
+
+function CodeBlock({ children, className }: { children: string; className?: string }) {
+  return (
+    <pre
+      className={cn(
+        "overflow-x-auto rounded-lg border bg-muted/40 p-3 font-mono text-xs leading-5 whitespace-pre-wrap",
+        className,
+      )}
+    >
+      {children}
+    </pre>
+  );
+}
+
+function TraceSection({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return <section className={cn("rounded-lg border bg-background", className)}>{children}</section>;
+}
+
+function TraceHeader({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return <div className={cn("border-b px-3 py-3", className)}>{children}</div>;
+}
+
+function TraceTitle({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return <div className={cn("text-sm font-medium", className)}>{children}</div>;
+}
+
+function TraceDescription({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return <p className={cn("mt-1 text-sm text-muted-foreground", className)}>{children}</p>;
+}
+
+function TraceBody({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return <div className={cn("p-3", className)}>{children}</div>;
+}
 
 function ToolSchemasView({ schemas }: { schemas: ToolSchema[] }) {
   if (schemas.length === 0) {
-    return <p className="muted">（本轮无 tools 参数，如 plan 阶段）</p>;
+    return <p className="text-sm text-muted-foreground">No tool schemas were included in this turn.</p>;
   }
+
   return (
-    <ol className="story-tool-schemas">
+    <ol className="flex flex-col gap-3">
       {schemas.map((schema) => (
-        <li key={schema.name} className="story-tool-schema">
-          <div className="story-tool-schema-head">
-            <code>{schema.name}</code>
-            <span className="story-hint">{schema.description}</span>
-          </div>
-          <pre className="story-pre">{JSON.stringify(schema.input_schema, null, 2)}</pre>
+        <li key={schema.name}>
+          <TraceSection>
+            <TraceHeader>
+              <TraceTitle className="flex items-center gap-2">
+                <WrenchIcon className="size-4 text-muted-foreground" />
+                <code>{schema.name}</code>
+              </TraceTitle>
+              <TraceDescription>{schema.description}</TraceDescription>
+            </TraceHeader>
+            <TraceBody>
+              <CodeBlock>{JSON.stringify(schema.input_schema, null, 2)}</CodeBlock>
+            </TraceBody>
+          </TraceSection>
         </li>
       ))}
     </ol>
@@ -44,50 +119,55 @@ function CallModelRequestView({
   const userContext = messages.filter((message) => message.role !== "system");
 
   return (
-    <div className="call-model-request">
-      <p className="story-call-desc">
-        每次 <code>call_model</code> 向 LLM 发送两部分：<strong>messages[]</strong>（含 system +
-        对话）与 <strong>tools[]</strong>（tool schema，独立 API 字段，不拼进 system 字符串）。
-        会话在首次 <code>get_or_create_session</code> 时注入 system prompt；之后每轮 user
-        turn 追加 user 消息，历史保留在 session 里作为 user context。
-      </p>
-
-      <div className="call-model-parts">
-        <section className="call-model-part">
-          <h4>① System prompt</h4>
-          <p className="story-hint">session[0]，首次创建会话时写入，之后每轮复用</p>
+    <div className="flex flex-col gap-3">
+      <TraceSection>
+        <TraceHeader>
+          <TraceTitle>System prompt</TraceTitle>
+          <TraceDescription>Created with the session and reused across turns.</TraceDescription>
+        </TraceHeader>
+        <TraceBody>
           {system ? (
-            <pre className="story-pre">{formatMessageContent(system, 2000)}</pre>
+            <CodeBlock>{formatMessageContent(system, 2000)}</CodeBlock>
           ) : (
-            <p className="muted">（无 system 消息）</p>
+            <p className="text-sm text-muted-foreground">No system message.</p>
           )}
-        </section>
+        </TraceBody>
+      </TraceSection>
 
-        <section className="call-model-part">
-          <h4>② User context（对话历史）</h4>
-          <p className="story-hint">messages[1…]：user / assistant / tool_result 多轮上下文</p>
+      <TraceSection>
+        <TraceHeader>
+          <TraceTitle>User context</TraceTitle>
+          <TraceDescription>Prior user, assistant, and tool-result messages.</TraceDescription>
+        </TraceHeader>
+        <TraceBody>
           {userContext.length === 0 ? (
-            <p className="muted">（尚无对话，仅 system）</p>
+            <p className="text-sm text-muted-foreground">No context messages yet.</p>
           ) : (
-            <ol className="story-message-list">
+            <ol className="flex flex-col gap-3">
               {userContext.map((message, index) => (
-                <li key={`${message.role}-${index}`} className={`story-msg story-msg-${message.role}`}>
-                  <span className="story-msg-role">{message.role}</span>
-                  <pre>{formatMessageContent(message)}</pre>
+                <li key={`${message.role}-${index}`} className="rounded-lg border bg-muted/20">
+                  <div className="border-b px-3 py-2">
+                    <Badge variant="outline">{message.role}</Badge>
+                  </div>
+                  <div className="p-3">
+                    <CodeBlock>{formatMessageContent(message)}</CodeBlock>
+                  </div>
                 </li>
               ))}
             </ol>
           )}
-        </section>
+        </TraceBody>
+      </TraceSection>
 
-        <section className="call-model-part">
-          <h4>③ Tool schemas（tools API 参数）</h4>
-          <p className="story-hint">
-            <code>build_tool_schemas(tools)</code> → 与 messages 并列传入，model 据此决定是否 tool_use
-          </p>
+      <TraceSection>
+        <TraceHeader>
+          <TraceTitle>Tool schemas</TraceTitle>
+          <TraceDescription>The model receives these callable tool contracts.</TraceDescription>
+        </TraceHeader>
+        <TraceBody>
           <ToolSchemasView schemas={toolSchemas} />
-        </section>
-      </div>
+        </TraceBody>
+      </TraceSection>
     </div>
   );
 }
@@ -97,31 +177,36 @@ function PhaseBody({ phase }: { phase: StoryPhase }) {
     case "prompt":
       return <CallModelRequestView messages={phase.messages} toolSchemas={phase.toolSchemas} />;
     case "think":
-      return <pre className="story-pre">{phase.content}</pre>;
+      return <CodeBlock>{phase.content}</CodeBlock>;
     case "tool_call":
       return (
-        <div className="story-tool-call">
-          <p>
-            工具 <code>{phase.toolName}</code>
-            {phase.decision && <span className={`decision decision-${phase.decision}`}> · {phase.decision}</span>}
-            {phase.permissionDecision && (
-              <span className="story-hint"> · 用户权限: {phase.permissionDecision}</span>
-            )}
-          </p>
-          <pre className="story-pre">{JSON.stringify(phase.toolInput, null, 2)}</pre>
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <Badge variant="secondary">
+              <WrenchIcon data-icon="inline-start" />
+              {phase.toolName}
+            </Badge>
+            {phase.decision ? <Badge variant="outline">{phase.decision}</Badge> : null}
+            {phase.permissionDecision ? (
+              <Badge variant="outline">permission: {phase.permissionDecision}</Badge>
+            ) : null}
+          </div>
+          <CodeBlock>{JSON.stringify(phase.toolInput, null, 2)}</CodeBlock>
         </div>
       );
     case "tool_result":
       return (
-        <div className={`story-tool-result${phase.isError ? " is-error" : ""}`}>
-          <p className="story-hint">
-            {phase.toolName} → 写回 session 作为 user 侧的 tool_result，下一轮 call_model 会进入 user context
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            {phase.toolName} writes a tool result back into the session for the next model turn.
           </p>
-          <pre className="story-pre">{phase.content}</pre>
+          <CodeBlock className={phase.isError ? "border-destructive/30 text-destructive" : undefined}>
+            {phase.content}
+          </CodeBlock>
         </div>
       );
     case "final":
-      return <pre className="story-pre story-final">{phase.content}</pre>;
+      return <CodeBlock>{phase.content}</CodeBlock>;
     default:
       return null;
   }
@@ -130,8 +215,8 @@ function PhaseBody({ phase }: { phase: StoryPhase }) {
 export function LoopTracePanel({ events }: Props) {
   if (events.length === 0) {
     return (
-      <p className="muted">
-        发送一条消息后，这里会按 agent loop 流程展示：用户输入 → 每轮 call_model → 工具 → 最终输出。
+      <p className="text-sm text-muted-foreground">
+        Send a message to see how Kgent moves from user input to model calls, tools, and final output.
       </p>
     );
   }
@@ -139,63 +224,98 @@ export function LoopTracePanel({ events }: Props) {
   const story = buildLoopStory(events);
 
   return (
-    <div className="loop-story">
-      <div className="flow-diagram" aria-hidden>
-        <span>用户输入</span>
-        <span className="flow-arrow">→</span>
-        <span>session += user</span>
-        <span className="flow-arrow">→</span>
-        <span>call_model</span>
-        <span className="flow-arrow">→</span>
-        <span>system + context + tools</span>
-        <span className="flow-arrow">→</span>
-        <span>工具/作答</span>
-        <span className="flow-arrow">→</span>
-        <span>最终输出</span>
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        <Badge variant="outline">
+          <MessageSquareTextIcon data-icon="inline-start" />
+          User input
+        </Badge>
+        <ChevronsRightIcon className="size-3" />
+        <Badge variant="outline">
+          <CommandIcon data-icon="inline-start" />
+          Model call
+        </Badge>
+        <ChevronsRightIcon className="size-3" />
+        <Badge variant="outline">
+          <WrenchIcon data-icon="inline-start" />
+          Tools
+        </Badge>
+        <ChevronsRightIcon className="size-3" />
+        <Badge variant="outline">
+          <BracesIcon data-icon="inline-start" />
+          Final output
+        </Badge>
       </div>
 
-      <section className="story-section story-user">
-        <h3>① 用户输入（本 turn 写入 session）</h3>
-        <pre className="story-pre">{story.userMessage ?? "（未知）"}</pre>
-      </section>
+      <TraceSection>
+        <TraceHeader>
+          <TraceTitle>User input</TraceTitle>
+        </TraceHeader>
+        <TraceBody>
+          <CodeBlock>{story.userMessage ?? "Unknown"}</CodeBlock>
+        </TraceBody>
+      </TraceSection>
 
       {story.turns.map((turn) => (
-        <section key={turn.turnIndex} className="story-section story-turn">
-          <h3>
-            ② Loop 第 {turn.turnIndex + 1} 轮
-            <span className="story-hint">for turn_index in range(max_steps)</span>
-          </h3>
-          {turn.phases.length === 0 ? (
-            <p className="muted">（本轮暂无步骤）</p>
-          ) : (
-            <ol className="story-phases">
-              {turn.phases.map((phase, index) => (
-                <li key={`${phase.kind}-${index}`} className={`story-phase story-phase-${phase.kind}`}>
-                  <div className="story-phase-title">{PHASE_LABELS[phase.kind]}</div>
-                  <PhaseBody phase={phase} />
-                </li>
-              ))}
-            </ol>
-          )}
-        </section>
+        <TraceSection key={turn.turnIndex}>
+          <TraceHeader>
+            <TraceTitle>Loop turn {turn.turnIndex + 1}</TraceTitle>
+            <TraceDescription>Max step iteration for this run.</TraceDescription>
+          </TraceHeader>
+          <TraceBody>
+            {turn.phases.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No steps for this turn.</p>
+            ) : (
+              <ol className="flex flex-col gap-3">
+                {turn.phases.map((phase, index) => (
+                  <li key={`${phase.kind}-${index}`}>
+                    <TraceSection
+                      className={cn(
+                        phase.kind === "think" && "border-l-4 border-l-violet-400",
+                        phase.kind === "tool_call" && "border-l-4 border-l-amber-400",
+                        phase.kind === "tool_result" && "border-l-4 border-l-emerald-400",
+                        phase.kind === "final" && "border-l-4 border-l-sky-400",
+                      )}
+                    >
+                      <TraceHeader>
+                        <Badge variant="secondary">{PHASE_LABELS[phase.kind]}</Badge>
+                      </TraceHeader>
+                      <TraceBody>
+                        <PhaseBody phase={phase} />
+                      </TraceBody>
+                    </TraceSection>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </TraceBody>
+        </TraceSection>
       ))}
 
-      <section className="story-section story-output">
-        <h3>③ 最终输出（run_finished）</h3>
-        {story.error && <pre className="story-pre story-error">{story.error}</pre>}
-        {story.finalAnswer ? (
-          <pre className="story-pre story-final">{story.finalAnswer}</pre>
-        ) : (
-          !story.error && <p className="muted">等待 run 结束…</p>
-        )}
-        {story.sessionMessageCount != null && (
-          <p className="story-hint">session 当前共 {story.sessionMessageCount} 条 messages</p>
-        )}
-      </section>
+      <TraceSection>
+        <TraceHeader>
+          <TraceTitle>Final output</TraceTitle>
+        </TraceHeader>
+        <TraceBody className="space-y-3">
+          {story.error ? <CodeBlock className="border-destructive/30 text-destructive">{story.error}</CodeBlock> : null}
+          {story.finalAnswer ? (
+            <CodeBlock>{story.finalAnswer}</CodeBlock>
+          ) : !story.error ? (
+            <p className="text-sm text-muted-foreground">Waiting for the run to finish.</p>
+          ) : null}
+          {story.sessionMessageCount != null ? (
+            <p className="text-xs text-muted-foreground">
+              Session now contains {story.sessionMessageCount} messages.
+            </p>
+          ) : null}
+        </TraceBody>
+      </TraceSection>
 
-      <details className="story-raw">
-        <summary>原始 WS 事件（高级调试）</summary>
-        <pre>{JSON.stringify(events, null, 2)}</pre>
+      <details className="rounded-lg border bg-background p-3">
+        <summary className="cursor-pointer text-sm font-medium">Raw SSE events</summary>
+        <div className="mt-3">
+          <CodeBlock>{JSON.stringify(events, null, 2)}</CodeBlock>
+        </div>
       </details>
     </div>
   );

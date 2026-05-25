@@ -57,6 +57,24 @@ npm run dev:web
 
 Open http://127.0.0.1:5173 in a browser.
 
+## Portable Windows package
+
+Build a portable Electron client without adding extra packaging dependencies:
+
+```bash
+npm run package:win
+```
+
+The app is written to:
+
+```text
+frontend/release/Kgent-win32-x64/Kgent.exe
+```
+
+Start the Python backend first, then launch `Kgent.exe`. In packaged desktop mode
+the UI connects to `http://127.0.0.1:8000` by default. Override it at build time
+with `VITE_API_BASE` if the backend runs elsewhere.
+
 ## Protocol
 
 See [`backend/app/runtime/protocol.py`](../backend/app/runtime/protocol.py) and [`docs/API.md`](../docs/API.md).
