@@ -8,6 +8,15 @@ from pathlib import Path
 from typing import Any
 
 from app.runtime.context_builder import build_model_messages
+from app.runtime.context_compression import (
+    CompressionConfig,
+    estimate_messages_tokens,
+    execute_compact,
+    get_token_calibrator,
+    micro_compact_messages,
+    should_auto_compact,
+)
+from app.runtime.compact_prompt import COMPACT_SYSTEM_PROMPT, compact_user_prompt
 from app.runtime.host import AgentHost, CollectingHost, build_permission_request, make_run_started_event
 from app.runtime.messages import (
     AgentResult,
@@ -18,7 +27,7 @@ from app.runtime.messages import (
     ToolResultBlock,
     ToolUseBlock,
 )
-from app.model_client import ModelClient
+from app.model_client import ModelClient, PromptTooLongError
 from app.runtime.permissions import AllowAllPolicy, PermissionPolicy
 from app.runtime.prompts import PLAN_TURN_USER_PROMPT
 from app.runtime.protocol import (
@@ -156,11 +165,76 @@ async def _run_plan_phase(
     project_root: Path,
     persistence: PersistenceService | None,
     session_id: str,
+    todo_state_store: TodoStateStore | None = None,
+    compression_config: CompressionConfig | None = None,
+    model_identity: str | None = None,
 ) -> AgentStep:
     """Text-only plan step (debug CLI). Ephemeral runtime prompt is not stored in session."""
+    cfg = compression_config or CompressionConfig()
     plan_messages = [*messages, Message(role="user", content=PLAN_TURN_USER_PROMPT)]
     request_messages = build_model_messages(plan_messages, project_root=project_root)
-    response = await model_client.call_model(request_messages, tools=[])
+    if cfg.context_compression_enabled and cfg.micro_compact_enabled:
+        request_messages = micro_compact_messages(
+            request_messages,
+            keep_recent=cfg.keep_recent_tool_results,
+            min_chars=cfg.micro_compact_min_chars,
+        )
+
+    # AutoCompact: summarize session when approaching context window.
+    local_estimate = estimate_messages_tokens(request_messages)
+    calibrated = local_estimate
+    if model_identity:
+        provider, _, model = model_identity.partition("/")
+        calibrated = get_token_calibrator().calibrated_estimate(provider, model, local_estimate)
+    if cfg.context_compression_enabled and cfg.auto_compact_enabled and should_auto_compact(
+        request_messages,
+        context_window_tokens=cfg.context_window_tokens,
+        auto_compact_buffer_tokens=cfg.auto_compact_buffer_tokens,
+        compact_max_summary_tokens=cfg.compact_max_summary_tokens,
+        calibrated_token_estimate=calibrated,
+    ):
+        try:
+            request_messages = await _compact_and_rebuild(
+                model_client=model_client,
+                messages=messages,
+                reason="auto_compact",
+                session_id=session_id,
+                project_root=project_root,
+                persistence=persistence,
+                todo_state_store=todo_state_store,
+                compression_config=compression_config,
+            )
+            # Rebuild plan request after compact.
+            plan_messages = [*messages, Message(role="user", content=PLAN_TURN_USER_PROMPT)]
+            request_messages = build_model_messages(plan_messages, project_root=project_root)
+            if cfg.context_compression_enabled and cfg.micro_compact_enabled:
+                request_messages = micro_compact_messages(
+                    request_messages,
+                    keep_recent=cfg.keep_recent_tool_results,
+                    min_chars=cfg.micro_compact_min_chars,
+                )
+        except Exception:
+            pass  # Compact failure is non-fatal.
+
+    try:
+        response = await model_client.call_model(request_messages, tools=[])
+    except PromptTooLongError:
+        if not cfg.context_compression_enabled or not cfg.reactive_compact_enabled:
+            raise
+        await _compact_and_rebuild(
+            model_client=model_client,
+            messages=messages,
+            reason="reactive_compact",
+            session_id=session_id,
+            project_root=project_root,
+            persistence=persistence,
+            todo_state_store=todo_state_store,
+            compression_config=compression_config,
+        )
+        plan_messages = [*messages, Message(role="user", content=PLAN_TURN_USER_PROMPT)]
+        request_messages = build_model_messages(plan_messages, project_root=project_root)
+        response = await model_client.call_model(request_messages, tools=[])
+
     plan_text = (response.text or "").strip() or PLAN_FALLBACK_TEXT
     assistant_message = Message(role="assistant", content=plan_text)
     messages.append(assistant_message)
@@ -260,9 +334,12 @@ async def run_agent_stream(
     project_root: Path | None = None,
     persistence: PersistenceService | None = None,
     todo_state_store: TodoStateStore | None = None,
+    compression_config: CompressionConfig | None = None,
+    model_identity: str | None = None,
 ) -> AgentResult:
     if policy is None:
         policy = AllowAllPolicy()
+    cfg = compression_config or CompressionConfig()
     effective_project_root = _infer_project_root(tools, project_root)
 
     seq_counter = [1]
@@ -327,6 +404,9 @@ async def run_agent_stream(
                     project_root=effective_project_root,
                     persistence=persistence,
                     session_id=session_id,
+                    todo_state_store=todo_state_store,
+                    compression_config=compression_config,
+                    model_identity=model_identity,
                 )
                 steps.append(think_step)
                 seq_counter[0] += 1
@@ -360,10 +440,63 @@ async def run_agent_stream(
                     tool_count=len(tool_schemas),
                     tool_schemas=tool_schemas,
                 )
-                response = await model_client.call_model(
-                    messages=build_model_messages(messages, project_root=effective_project_root),
-                    tools=tool_schemas,
-                )
+                act_request = build_model_messages(messages, project_root=effective_project_root)
+                if cfg.context_compression_enabled and cfg.micro_compact_enabled:
+                    act_request = micro_compact_messages(
+                        act_request,
+                        keep_recent=cfg.keep_recent_tool_results,
+                        min_chars=cfg.micro_compact_min_chars,
+                    )
+
+                # AutoCompact: summarize session when approaching context window.
+                local_estimate = estimate_messages_tokens(act_request)
+                calibrated = local_estimate
+                if model_identity:
+                    provider, _, model = model_identity.partition("/")
+                    calibrated = get_token_calibrator().calibrated_estimate(provider, model, local_estimate)
+                if cfg.context_compression_enabled and cfg.auto_compact_enabled and should_auto_compact(
+                    act_request,
+                    context_window_tokens=cfg.context_window_tokens,
+                    auto_compact_buffer_tokens=cfg.auto_compact_buffer_tokens,
+                    compact_max_summary_tokens=cfg.compact_max_summary_tokens,
+                    calibrated_token_estimate=calibrated,
+                ):
+                    try:
+                        act_request = await _compact_and_rebuild(
+                            model_client=model_client,
+                            messages=messages,
+                            reason="auto_compact",
+                            session_id=session_id,
+                            project_root=effective_project_root,
+                            persistence=persistence,
+                            todo_state_store=todo_state_store,
+                            compression_config=compression_config,
+                        )
+                    except Exception:
+                        pass  # Compact failure is non-fatal.
+
+                try:
+                    response = await model_client.call_model(
+                        messages=act_request,
+                        tools=tool_schemas,
+                    )
+                except PromptTooLongError:
+                    if not cfg.context_compression_enabled or not cfg.reactive_compact_enabled:
+                        raise
+                    act_request = await _compact_and_rebuild(
+                        model_client=model_client,
+                        messages=messages,
+                        reason="reactive_compact",
+                        session_id=session_id,
+                        project_root=effective_project_root,
+                        persistence=persistence,
+                        todo_state_store=todo_state_store,
+                        compression_config=compression_config,
+                    )
+                    response = await model_client.call_model(
+                        messages=act_request,
+                        tools=tool_schemas,
+                    )
                 messages.append(response.assistant_message)
                 _persist_message(persistence, session_id, response.assistant_message)
                 await _emit_loop_trace(
@@ -391,6 +524,8 @@ async def run_agent_stream(
                     project_root=effective_project_root,
                     persistence=persistence,
                     todo_state_store=todo_state_store,
+                    compression_config=compression_config,
+                    model_identity=model_identity,
                 )
 
             if await host.check_cancelled():
@@ -521,7 +656,7 @@ async def run_agent_stream(
                     step=observe_step,
                 )
                 tool_result_message = Message(
-                    role="user",
+                    role="tool",
                     content=[
                         ToolResultBlock(
                             tool_use_id=tool_use.id,
@@ -600,6 +735,56 @@ async def run_agent(
     return host.to_agent_result()
 
 
+async def _compact_and_rebuild(
+    *,
+    model_client: ModelClient,
+    messages: list[Message],
+    reason: str,
+    session_id: str,
+    project_root: Path,
+    persistence: PersistenceService | None,
+    todo_state_store: TodoStateStore | None,
+    compression_config: CompressionConfig | None = None,
+) -> list[Message]:
+    """Summarize session, replace in-memory messages, rebuild request view."""
+    cfg = compression_config or CompressionConfig()
+
+    def _rebuild(msgs: list[Message]) -> list[Message]:
+        request_session_messages = _messages_with_todo_reminder(
+            msgs,
+            todo_state_store=todo_state_store,
+            session_id=session_id,
+        )
+        req = build_model_messages(request_session_messages, project_root=project_root)
+        if cfg.context_compression_enabled and cfg.micro_compact_enabled:
+            req = micro_compact_messages(
+                req,
+                keep_recent=cfg.keep_recent_tool_results,
+                min_chars=cfg.micro_compact_min_chars,
+            )
+        return req
+
+    def _persist(sid: str, payload: dict) -> None:
+        if persistence is not None:
+            persistence.append_summary(sid, payload)
+
+    def _on_event(*_a: Any, **_kw: Any) -> None:
+        pass  # Telemetry sink — transcript persistence covers audit.
+
+    return await execute_compact(
+        model_client=model_client,
+        messages=messages,
+        reason=reason,
+        compact_system_prompt=COMPACT_SYSTEM_PROMPT,
+        compact_user_prompt_text=compact_user_prompt(len(messages)),
+        keep_recent_messages=cfg.compact_keep_recent_messages,
+        persist_fn=_persist,
+        session_id=session_id,
+        rebuild_request_fn=_rebuild,
+        on_compact_event=_on_event,
+    )
+
+
 async def _run_standard_turn(
     model_client: ModelClient,
     messages: list[Message],
@@ -615,14 +800,51 @@ async def _run_standard_turn(
     project_root: Path | None = None,
     persistence: PersistenceService | None = None,
     todo_state_store: TodoStateStore | None = None,
+    compression_config: CompressionConfig | None = None,
+    model_identity: str | None = None,
 ) -> ModelResponse:
     effective_project_root = _infer_project_root([], project_root)
+    cfg = compression_config or CompressionConfig()
     request_session_messages = _messages_with_todo_reminder(
         messages,
         todo_state_store=todo_state_store,
         session_id=session_id,
     )
     request_messages = build_model_messages(request_session_messages, project_root=effective_project_root)
+    if cfg.context_compression_enabled and cfg.micro_compact_enabled:
+        request_messages = micro_compact_messages(
+            request_messages,
+            keep_recent=cfg.keep_recent_tool_results,
+            min_chars=cfg.micro_compact_min_chars,
+        )
+
+    # AutoCompact: summarize session when approaching context window.
+    local_estimate = estimate_messages_tokens(request_messages)
+    calibrated = local_estimate
+    if model_identity:
+        provider, _, model = model_identity.partition("/")
+        calibrated = get_token_calibrator().calibrated_estimate(provider, model, local_estimate)
+    if cfg.context_compression_enabled and cfg.auto_compact_enabled and should_auto_compact(
+        request_messages,
+        context_window_tokens=cfg.context_window_tokens,
+        auto_compact_buffer_tokens=cfg.auto_compact_buffer_tokens,
+        compact_max_summary_tokens=cfg.compact_max_summary_tokens,
+        calibrated_token_estimate=calibrated,
+    ):
+        try:
+            request_messages = await _compact_and_rebuild(
+                model_client=model_client,
+                messages=messages,
+                reason="auto_compact",
+                session_id=session_id,
+                project_root=effective_project_root,
+                persistence=persistence,
+                todo_state_store=todo_state_store,
+                compression_config=compression_config,
+            )
+        except Exception:
+            pass  # Compact failure is non-fatal; proceed with original messages.
+
     await _emit_loop_trace(
         host=host,
         seq_counter=seq_counter,
@@ -635,7 +857,33 @@ async def _run_standard_turn(
         tool_count=len(tool_schemas),
         tool_schemas=tool_schemas,
     )
-    response = await model_client.call_model(messages=request_messages, tools=tool_schemas)
+    try:
+        response = await model_client.call_model(messages=request_messages, tools=tool_schemas)
+    except PromptTooLongError:
+        if not cfg.context_compression_enabled or not cfg.reactive_compact_enabled:
+            raise
+        request_messages = await _compact_and_rebuild(
+            model_client=model_client,
+            messages=messages,
+            reason="reactive_compact",
+            session_id=session_id,
+            project_root=effective_project_root,
+            persistence=persistence,
+            todo_state_store=todo_state_store,
+            compression_config=compression_config,
+        )
+        response = await model_client.call_model(messages=request_messages, tools=tool_schemas)
+
+    # Record usage for calibration.
+    if model_identity and response.usage and response.usage.prompt_tokens:
+        provider, _, model = model_identity.partition("/")
+        get_token_calibrator().record(
+            provider,
+            model,
+            estimated_tokens=local_estimate,
+            actual_prompt_tokens=response.usage.prompt_tokens,
+        )
+
     messages.append(response.assistant_message)
     _persist_message(persistence, session_id, response.assistant_message)
 

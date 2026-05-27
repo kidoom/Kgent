@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import logging
+from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends
+
+_log = logging.getLogger(__name__)
 
 from app.api.deps import (
     build_api_policy,
@@ -37,6 +42,15 @@ from app.memory.session_id import validate_session_id
 from app.memory.session_store import delete_session as delete_memory_session
 from app.memory.session_store import get_or_create_session, has_session
 from app.model_client import ModelClientError
+from app.runtime.compact_prompt import COMPACT_SYSTEM_PROMPT, compact_user_prompt
+from app.runtime.context_builder import build_model_messages
+from app.runtime.context_compression import (
+    CompressionConfig,
+    execute_compact,
+    should_auto_compact,
+    should_resume_compact,
+)
+from app.runtime.messages import Message
 from app.runtime.run_manager import RunManager
 from app.runtime.todo_state import TodoStateStore
 
@@ -76,6 +90,56 @@ def _hydrate_session_if_needed(
         return messages
 
     get_or_create_session(session_id, hydrate_fn=hydrate_fn)
+
+
+async def _try_resume_compact(
+    session_id: str,
+    *,
+    model_client: Any,
+    persistence: PersistenceService,
+    settings: Settings,
+    todo_state_store: TodoStateStore,
+    compression_config: CompressionConfig,
+) -> None:
+    """Run Resume-time Compact if the hydrated session is oversized.
+
+    Non-fatal: failures are logged and the caller continues normally.
+    """
+    messages = get_or_create_session(session_id)
+    if not should_resume_compact(
+        messages,
+        project_root=settings.project_root,
+        todo_state_store=todo_state_store,
+        session_id=session_id,
+        compression_config=compression_config,
+    ):
+        return
+
+    _log.info("resume_compact starting for session %s (%d messages)", session_id, len(messages))
+
+    def _persist(sid: str, payload: dict) -> None:
+        persistence.append_summary(sid, payload)
+
+    before_count = len(messages)
+    try:
+        await execute_compact(
+            model_client=model_client,
+            messages=messages,
+            reason="resume_compact",
+            compact_system_prompt=COMPACT_SYSTEM_PROMPT,
+            compact_user_prompt_text=compact_user_prompt(before_count),
+            keep_recent_messages=compression_config.compact_keep_recent_messages,
+            persist_fn=_persist,
+            session_id=session_id,
+        )
+        _log.info(
+            "resume_compact completed for session %s (%d -> %d messages)",
+            session_id,
+            before_count,
+            len(messages),
+        )
+    except Exception:
+        _log.warning("resume_compact failed for session %s, continuing normally", session_id, exc_info=True)
 
 
 @router.get("/sessions", response_model=SessionListResponse)
@@ -205,6 +269,29 @@ async def send_message(
             error_type="conflict",
             message="session already has an active run",
         )
+
+    # Resume-time Compact: compress oversized hydrated sessions before the run.
+    compression_config = CompressionConfig(
+        context_compression_enabled=settings.context_compression_enabled,
+        auto_compact_enabled=settings.auto_compact_enabled,
+        context_window_tokens=settings.context_window_tokens,
+        auto_compact_buffer_tokens=settings.auto_compact_buffer_tokens,
+        compact_keep_recent_messages=settings.compact_keep_recent_messages,
+        compact_max_summary_tokens=settings.compact_max_summary_tokens,
+        micro_compact_enabled=settings.micro_compact_enabled,
+        reactive_compact_enabled=settings.reactive_compact_enabled,
+        keep_recent_tool_results=settings.keep_recent_tool_results,
+        micro_compact_min_chars=settings.micro_compact_min_chars,
+    )
+    await _try_resume_compact(
+        session_id,
+        model_client=model_client,
+        persistence=persistence,
+        settings=settings,
+        todo_state_store=todo_state_store,
+        compression_config=compression_config,
+    )
+
     tools = build_runtime_tools(
         settings,
         session_id=session_id,
@@ -226,6 +313,8 @@ async def send_message(
         project_root=settings.project_root,
         persistence=persistence,
         todo_state_store=todo_state_store,
+        compression_config=compression_config,
+        model_identity=f"{settings.provider}/{settings.model}",
     )
 
     return SendMessageResponse(run_id=run_id, session_id=session_id, accepted=True)
@@ -289,3 +378,80 @@ async def cancel_run(
     cancel_task(run_id)
     await run_manager.cancel_run(run_id)
     return CommandAck(run_id=run_id, accepted=True)
+
+
+@router.post("/sessions/{session_id}/compact", response_model=dict)
+async def manual_compact(
+    session_id: str,
+    model_client: Any = Depends(resolve_model_client),
+    persistence: PersistenceService = Depends(get_persistence_service),
+    settings: Any = Depends(get_app_settings),
+    run_manager: RunManager = Depends(get_run_manager),
+) -> dict:
+    try:
+        validate_session_id(session_id)
+    except ValueError as exc:
+        raise api_error(400, error_type="validation_error", message=str(exc)) from exc
+
+    if run_manager.has_active_run(session_id):
+        raise api_error(
+            409,
+            error_type="conflict",
+            message="cannot compact a session with an active run",
+        )
+
+    if not has_session(session_id):
+        _hydrate_session_if_needed(session_id, persistence)
+
+    cfg = CompressionConfig(
+        context_compression_enabled=settings.context_compression_enabled,
+        auto_compact_enabled=settings.auto_compact_enabled,
+        context_window_tokens=settings.context_window_tokens,
+        auto_compact_buffer_tokens=settings.auto_compact_buffer_tokens,
+        compact_keep_recent_messages=settings.compact_keep_recent_messages,
+        compact_max_summary_tokens=settings.compact_max_summary_tokens,
+        micro_compact_enabled=settings.micro_compact_enabled,
+        reactive_compact_enabled=settings.reactive_compact_enabled,
+        keep_recent_tool_results=settings.keep_recent_tool_results,
+        micro_compact_min_chars=settings.micro_compact_min_chars,
+    )
+    messages = get_or_create_session(session_id)
+    before_count = len(messages)
+    request_messages = build_model_messages(messages, project_root=settings.project_root)
+    if not should_auto_compact(
+        request_messages,
+        context_window_tokens=cfg.context_window_tokens,
+        auto_compact_buffer_tokens=cfg.auto_compact_buffer_tokens,
+        compact_max_summary_tokens=cfg.compact_max_summary_tokens,
+    ):
+        return {
+            "session_id": session_id,
+            "compacted": False,
+            "reason": "below threshold",
+            "message_count": before_count,
+        }
+
+    def _persist(sid: str, payload: dict) -> None:
+        if persistence is not None:
+            persistence.append_summary(sid, payload)
+
+    try:
+        await execute_compact(
+            model_client=model_client,
+            messages=messages,
+            reason="manual_compact",
+            compact_system_prompt=COMPACT_SYSTEM_PROMPT,
+            compact_user_prompt_text=compact_user_prompt(before_count),
+            keep_recent_messages=cfg.compact_keep_recent_messages,
+            persist_fn=_persist,
+            session_id=session_id,
+        )
+    except (ModelClientError, RuntimeError, OSError):
+        raise api_error(500, error_type="internal_error", message="compact summarizer failed")
+
+    return {
+        "session_id": session_id,
+        "compacted": True,
+        "before_message_count": before_count,
+        "after_message_count": len(messages),
+    }
