@@ -31,6 +31,7 @@ def build_tools(
     persistence: PersistenceService | None = None,
     subagent_runner: Callable[..., Coroutine[Any, Any, Any]] | None = None,
     include_task_tool: bool = False,
+    agent_registry: Any | None = None,
 ) -> list[Tool]:
     tools: list[Tool] = [
         TodoWriteTool(
@@ -51,7 +52,9 @@ def build_tools(
         GitLogTool(project_root=project_root),
     ]
     if include_task_tool and subagent_runner is not None:
-        tools.append(TaskTool(runner=subagent_runner))
+        from app.runtime.agent_definitions import get_default_registry
+        registry = agent_registry or get_default_registry()
+        tools.append(TaskTool(runner=subagent_runner, agent_types=registry.available_types()))
     return tools
 
 
@@ -66,22 +69,39 @@ def build_subagent_runner(
 ) -> Callable[..., Coroutine[Any, Any, Any]]:
     """Build a runner closure for TaskTool that delegates to run_subagent.
 
-    The returned async callable accepts ``prompt`` and optional ``max_steps``.
-    It constructs child tools bound to the child session id (so TodoWriteTool
-    writes to the child, not the parent).  The active parent host is picked up
-    from the ``subagent_active_host`` context variable, so permission requests
-    in the child can bubble up to the parent UI.
+    The returned async callable accepts ``prompt``, optional ``agent_type``,
+    and optional ``max_steps``.  It resolves the selected agent definition,
+    constructs child tools bound to the child session id, then filters them
+    according to the definition's tool allow/deny lists.
     """
-    from app.runtime.subagent import run_subagent
+    from app.runtime.subagent import run_subagent, SubagentResult
+    from app.runtime.agent_definitions import get_default_registry, filter_tools_for_definition
 
-    async def _runner(*, prompt: str, max_steps: int | None = None) -> Any:
+    registry = get_default_registry()
+
+    async def _runner(
+        *, prompt: str, agent_type: str = "general-purpose", max_steps: int | None = None,
+    ) -> Any:
+        try:
+            definition = registry.get(agent_type)
+        except KeyError as exc:
+            return SubagentResult(
+                summary=str(exc),
+                child_session_id="",
+                status="error",
+                error=str(exc),
+            )
+
         def _build_child_tools(child_session_id: str) -> list[Tool]:
-            return build_tools(
+            all_tools = build_tools(
                 project_root,
                 session_id=child_session_id,
                 todo_state_store=todo_state_store,
                 persistence=persistence,
             )
+            return filter_tools_for_definition(all_tools, definition)
+
+        effective_max_steps = max_steps if max_steps is not None else definition.default_max_steps
 
         return await run_subagent(
             prompt=prompt,
@@ -91,7 +111,8 @@ def build_subagent_runner(
             policy=policy,
             project_root=project_root,
             persistence=persistence,
-            max_steps=max_steps or 5,
+            max_steps=effective_max_steps,
+            system_prompt=definition.system_prompt,
         )
 
     return _runner

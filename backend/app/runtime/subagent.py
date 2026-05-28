@@ -6,14 +6,14 @@ import contextvars
 import hashlib
 import logging
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Literal
 
 from app.memory.persistence import PersistenceService
 from app.model_client import ModelClient
 from app.runtime.host import AgentHost, SubagentHost
-from app.runtime.loop import run_agent
+from app.runtime.loop import RunCancelledError, run_agent
 from app.runtime.messages import AgentResult
 from app.runtime.permissions import PermissionPolicy
 from app.tools.base import Tool
@@ -37,8 +37,8 @@ def reset_active_host(token: contextvars.Token) -> None:
     """Reset the active host after a run completes."""
     _active_host.reset(token)
 
-# Default conservative step limit for child agents.
-DEFAULT_SUBAGENT_MAX_STEPS = 5
+# Re-exported for convenience; canonical value lives in agent_definitions.
+from app.runtime.agent_definitions import DEFAULT_SUBAGENT_MAX_STEPS
 
 SUBAGENT_SYSTEM_PROMPT = (
     "You are a focused subagent. Complete the delegated task described below. "
@@ -78,6 +78,7 @@ async def run_subagent(
     persistence: PersistenceService | None = None,
     max_steps: int = DEFAULT_SUBAGENT_MAX_STEPS,
     host: AgentHost | None = None,
+    system_prompt: str = SUBAGENT_SYSTEM_PROMPT,
 ) -> SubagentResult:
     """Run an isolated child agent loop for the given prompt.
 
@@ -117,7 +118,7 @@ async def run_subagent(
             policy=policy,
             project_root=project_root,
             persistence=persistence,
-            system_prompt=SUBAGENT_SYSTEM_PROMPT,
+            system_prompt=system_prompt,
             host=effective_host,
         )
     except RuntimeError as exc:
@@ -137,6 +138,8 @@ async def run_subagent(
             status="error",
             error=msg,
         )
+    except RunCancelledError:
+        raise
     except Exception as exc:
         msg = str(exc)
         _log.error("subagent unexpected error: child=%s error=%s", child_session_id, msg)
