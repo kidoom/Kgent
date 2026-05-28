@@ -1,1 +1,0 @@
-"""Kgent tests."""

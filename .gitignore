@@ -13,3 +13,12 @@ settings.json
 dist/
 build/
 .kgent/
+
+# auxiliary / dev process files
+.agents/
+.claude/
+tests/
+notebooks/
+openspec/
+tmp_http_debug/
+docs/
