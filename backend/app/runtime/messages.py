@@ -26,12 +26,20 @@ class ToolResultBlock(BaseModel):
 class Message(BaseModel):
     """The minimal message shape used by Kgent."""
 
-    role: Literal["system", "user", "assistant"]
+    role: Literal["system", "user", "assistant", "tool"]
     content: str | list[ToolUseBlock] | list[ToolResultBlock]
     # Visible plan/reasoning text when the assistant reply also includes tool_use blocks.
     assistant_text: str | None = None
     # Context-builder messages are sent to the model but never persisted in session history.
     is_meta: bool = False
+
+
+class TokenUsage(BaseModel):
+    """Optional token usage reported by the model provider."""
+
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
 
 
 class ModelResponse(BaseModel):
@@ -40,6 +48,7 @@ class ModelResponse(BaseModel):
     assistant_message: Message
     text: str = ""
     tool_uses: list[ToolUseBlock] = Field(default_factory=list)
+    usage: TokenUsage | None = None
 
 
 class ToolExecutionResult(BaseModel):

@@ -24,6 +24,16 @@ _ENV_MAP = {
     "KGENT_STORAGE_DIR": "storage_dir",
     "KGENT_DISABLE_PERSISTENCE": "disable_persistence",
     "KGENT_TRANSCRIPT_MAX_BYTES": "transcript_max_bytes",
+    "KGENT_CONTEXT_COMPRESSION_ENABLED": "context_compression_enabled",
+    "KGENT_MICRO_COMPACT_ENABLED": "micro_compact_enabled",
+    "KGENT_AUTO_COMPACT_ENABLED": "auto_compact_enabled",
+    "KGENT_REACTIVE_COMPACT_ENABLED": "reactive_compact_enabled",
+    "KGENT_CONTEXT_WINDOW_TOKENS": "context_window_tokens",
+    "KGENT_AUTO_COMPACT_BUFFER_TOKENS": "auto_compact_buffer_tokens",
+    "KGENT_KEEP_RECENT_TOOL_RESULTS": "keep_recent_tool_results",
+    "KGENT_MICRO_COMPACT_MIN_CHARS": "micro_compact_min_chars",
+    "KGENT_COMPACT_KEEP_RECENT_MESSAGES": "compact_keep_recent_messages",
+    "KGENT_COMPACT_MAX_SUMMARY_TOKENS": "compact_max_summary_tokens",
 }
 
 _DEFAULTS = {
@@ -38,6 +48,16 @@ _DEFAULTS = {
     "storage_dir": "",
     "disable_persistence": "0",
     "transcript_max_bytes": 52428800,
+    "context_compression_enabled": "1",
+    "micro_compact_enabled": "1",
+    "auto_compact_enabled": "1",
+    "reactive_compact_enabled": "1",
+    "context_window_tokens": 200000,
+    "auto_compact_buffer_tokens": 13000,
+    "keep_recent_tool_results": 5,
+    "micro_compact_min_chars": 1000,
+    "compact_keep_recent_messages": 12,
+    "compact_max_summary_tokens": 4000,
 }
 
 _VALID_PERMISSION_MODES = ("allow_all", "risk_based", "interactive")
@@ -67,7 +87,7 @@ def dotenv_path() -> Path:
 
 
 def _load_dotenv() -> dict[str, str]:
-    """Parse .env without mutating os.environ."""
+    """Parse .env and set environment variables for proxy settings."""
     values: dict[str, str] = {}
     path = dotenv_path()
     if not path.exists():
@@ -81,6 +101,9 @@ def _load_dotenv() -> dict[str, str]:
         value = value.strip().strip("\"'")
         if key:
             values[key] = value
+            # Set proxy-related environment variables immediately
+            if key.upper() in ("NO_PROXY", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"):
+                os.environ[key.upper()] = value
     return values
 
 
@@ -98,6 +121,16 @@ class Settings:
     storage_dir: Path = Path(".kgent")
     disable_persistence: bool = False
     transcript_max_bytes: int = 52428800
+    context_compression_enabled: bool = True
+    micro_compact_enabled: bool = True
+    auto_compact_enabled: bool = True
+    reactive_compact_enabled: bool = True
+    context_window_tokens: int = 200000
+    auto_compact_buffer_tokens: int = 13000
+    keep_recent_tool_results: int = 5
+    micro_compact_min_chars: int = 1000
+    compact_keep_recent_messages: int = 12
+    compact_max_summary_tokens: int = 4000
     dotenv_file: Path | None = None
 
     @property
@@ -190,6 +223,47 @@ def _build_settings(dotenv_first: bool) -> Settings:
 
     disable_persistence = _parse_bool(_get("disable_persistence"))
 
+    context_compression_enabled = _parse_bool(_get("context_compression_enabled"))
+    micro_compact_enabled = _parse_bool(_get("micro_compact_enabled"))
+    auto_compact_enabled = _parse_bool(_get("auto_compact_enabled"))
+    reactive_compact_enabled = _parse_bool(_get("reactive_compact_enabled"))
+
+    try:
+        context_window_tokens = int(_get("context_window_tokens"))
+    except (ValueError, TypeError):
+        context_window_tokens = _DEFAULTS["context_window_tokens"]
+    context_window_tokens = max(context_window_tokens, 4096)
+
+    try:
+        auto_compact_buffer_tokens = int(_get("auto_compact_buffer_tokens"))
+    except (ValueError, TypeError):
+        auto_compact_buffer_tokens = _DEFAULTS["auto_compact_buffer_tokens"]
+    auto_compact_buffer_tokens = max(auto_compact_buffer_tokens, 1024)
+
+    try:
+        keep_recent_tool_results = int(_get("keep_recent_tool_results"))
+    except (ValueError, TypeError):
+        keep_recent_tool_results = _DEFAULTS["keep_recent_tool_results"]
+    keep_recent_tool_results = max(keep_recent_tool_results, 1)
+
+    try:
+        micro_compact_min_chars = int(_get("micro_compact_min_chars"))
+    except (ValueError, TypeError):
+        micro_compact_min_chars = _DEFAULTS["micro_compact_min_chars"]
+    micro_compact_min_chars = max(micro_compact_min_chars, 100)
+
+    try:
+        compact_keep_recent_messages = int(_get("compact_keep_recent_messages"))
+    except (ValueError, TypeError):
+        compact_keep_recent_messages = _DEFAULTS["compact_keep_recent_messages"]
+    compact_keep_recent_messages = max(compact_keep_recent_messages, 4)
+
+    try:
+        compact_max_summary_tokens = int(_get("compact_max_summary_tokens"))
+    except (ValueError, TypeError):
+        compact_max_summary_tokens = _DEFAULTS["compact_max_summary_tokens"]
+    compact_max_summary_tokens = max(compact_max_summary_tokens, 512)
+
     return Settings(
         provider=provider,
         model=model,
@@ -202,6 +276,16 @@ def _build_settings(dotenv_first: bool) -> Settings:
         storage_dir=storage_dir,
         disable_persistence=disable_persistence,
         transcript_max_bytes=transcript_max_bytes,
+        context_compression_enabled=context_compression_enabled,
+        micro_compact_enabled=micro_compact_enabled,
+        auto_compact_enabled=auto_compact_enabled,
+        reactive_compact_enabled=reactive_compact_enabled,
+        context_window_tokens=context_window_tokens,
+        auto_compact_buffer_tokens=auto_compact_buffer_tokens,
+        keep_recent_tool_results=keep_recent_tool_results,
+        micro_compact_min_chars=micro_compact_min_chars,
+        compact_keep_recent_messages=compact_keep_recent_messages,
+        compact_max_summary_tokens=compact_max_summary_tokens,
         dotenv_file=env_path if env_path.exists() else None,
     )
 

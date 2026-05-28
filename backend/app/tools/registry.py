@@ -113,6 +113,7 @@ def build_subagent_runner(
             persistence=persistence,
             max_steps=effective_max_steps,
             system_prompt=definition.system_prompt,
+            agent_type=agent_type,
         )
 
     return _runner

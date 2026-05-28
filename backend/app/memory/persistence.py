@@ -184,6 +184,26 @@ class PersistenceService:
             deleted_transcript = self._transcript.delete_transcript(session_id)
         return deleted_index or deleted_transcript
 
+    def append_summary(self, session_id: str, payload: dict[str, Any]) -> None:
+        if self._disabled:
+            return
+        validate_session_id(session_id)
+        entry = TranscriptEntry(
+            entry_id=new_entry_id(),
+            session_id=session_id,
+            type="summary",
+            project_root=str(self._project_root),
+            payload=payload,
+        )
+        with _lock:
+            try:
+                self._transcript.append_entry(session_id, entry)
+            except TranscriptTooLargeError as exc:
+                raise PersistenceError(str(exc)) from exc
+            meta = self._index.get_session(session_id) or self.ensure_session(session_id)
+            meta.updated_at = datetime.now(timezone.utc)
+            self._index.upsert_session(meta)
+
     def load_transcript(self, session_id: str) -> tuple[list[TranscriptEntry], list[str]]:
         validate_session_id(session_id)
         if self._disabled:
@@ -201,6 +221,22 @@ class PersistenceService:
         entries, warnings = self.load_transcript(session_id)
         raw_messages: list[Message] = []
         for entry in entries:
+            if entry.type == "summary":
+                # Compact boundary: discard pre-compact messages, insert summary
+                # and any saved recent messages.
+                summary_text = entry.payload.get("summary", "")
+                if summary_text:
+                    boundary = Message(role="user", content=summary_text)
+                    recent_msgs: list[Message] = []
+                    for idx, raw in enumerate(entry.payload.get("recent_messages", [])):
+                        try:
+                            recent_msgs.append(Message.model_validate(raw))
+                        except Exception as exc:
+                            warnings.append(
+                                f"summary {entry.entry_id}: skipped recent_message[{idx}] ({exc})"
+                            )
+                    raw_messages = [boundary, *recent_msgs]
+                continue
             if entry.type != "message":
                 continue
             try:
@@ -210,6 +246,10 @@ class PersistenceService:
                 continue
             if message.is_meta:
                 continue
+            if message.role == "user" and isinstance(message.content, list) and any(
+                isinstance(b, ToolResultBlock) for b in message.content
+            ):
+                message = Message(role="tool", content=message.content)
             raw_messages.append(message)
         repaired, repair_warnings = _repair_messages(raw_messages)
         warnings.extend(repair_warnings)
@@ -258,7 +298,7 @@ def _repair_messages(messages: list[Message]) -> tuple[list[Message], list[str]]
             for block in message.content:
                 if isinstance(block, ToolUseBlock):
                     tool_use_ids.add(block.id)
-        if message.role == "user" and isinstance(message.content, list):
+        if message.role == "tool" and isinstance(message.content, list):
             for block in message.content:
                 if isinstance(block, ToolResultBlock):
                     tool_result_ids.add(block.tool_use_id)
@@ -288,7 +328,7 @@ def _repair_messages(messages: list[Message]) -> tuple[list[Message], list[str]]
             repaired.append(message)
             continue
 
-        if message.role == "user" and isinstance(message.content, list):
+        if message.role == "tool" and isinstance(message.content, list):
             blocks = [
                 block
                 for block in message.content
@@ -298,7 +338,7 @@ def _repair_messages(messages: list[Message]) -> tuple[list[Message], list[str]]
                 )
             ]
             if blocks:
-                repaired.append(Message(role="user", content=blocks))
+                repaired.append(Message(role="tool", content=blocks))
             continue
 
         repaired.append(message)

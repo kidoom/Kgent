@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from app.runtime.context_compression import trim_session_messages_safely
 from app.runtime.messages import Message
 
 SESSIONS: dict[str, list[Message]] = {}
@@ -30,12 +31,8 @@ def delete_session(session_id: str) -> bool:
 
 
 def trim_session_messages(messages: list[Message], max_messages: int) -> None:
-    """Keep the most recent real session messages."""
-    if max_messages < 1:
-        max_messages = 1
-    if len(messages) <= max_messages:
-        return
-    messages[:] = messages[-max_messages:]
+    """Keep the most recent messages while preserving tool_use/tool_result pairs."""
+    trim_session_messages_safely(messages, max_messages)
 
 
 def reset_sessions() -> None:

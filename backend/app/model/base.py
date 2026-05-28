@@ -15,6 +15,10 @@ class ModelClientError(Exception):
     """Raised when a model provider fails (network, auth, parse, etc.)."""
 
 
+class PromptTooLongError(ModelClientError):
+    """Raised when the prompt exceeds the model's context window."""
+
+
 # ---------------------------------------------------------------------------
 # Protocol
 # ---------------------------------------------------------------------------

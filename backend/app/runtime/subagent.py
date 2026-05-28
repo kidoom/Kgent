@@ -6,7 +6,7 @@ import contextvars
 import hashlib
 import logging
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Literal
 
@@ -48,6 +48,19 @@ SUBAGENT_SYSTEM_PROMPT = (
 
 
 @dataclass
+class SubagentPayload:
+    """Semantic work product returned by a subagent."""
+
+    summary: str = ""
+    findings: list[str] = field(default_factory=list)
+    files: list[str] = field(default_factory=list)
+    actions: list[str] = field(default_factory=list)
+    risks: list[str] = field(default_factory=list)
+    next_steps: list[str] = field(default_factory=list)
+    raw: str = ""
+
+
+@dataclass
 class SubagentResult:
     """Structured result from a subagent run."""
 
@@ -58,6 +71,18 @@ class SubagentResult:
     child_run_id: str = ""
     step_count: int = 0
     message_count: int = 0
+    agent_type: str = ""
+    payload: SubagentPayload | None = None
+
+
+def _try_parse_payload(text: str) -> SubagentPayload | None:
+    """Parse final answer text into a payload, returning None on failure."""
+    try:
+        from app.runtime.payload_parser import parse_payload
+        return parse_payload(text)
+    except Exception:
+        _log.debug("payload parse failed, returning None", exc_info=True)
+        return None
 
 
 def generate_child_session_id(parent_session_id: str) -> str:
@@ -79,6 +104,7 @@ async def run_subagent(
     max_steps: int = DEFAULT_SUBAGENT_MAX_STEPS,
     host: AgentHost | None = None,
     system_prompt: str = SUBAGENT_SYSTEM_PROMPT,
+    agent_type: str = "",
 ) -> SubagentResult:
     """Run an isolated child agent loop for the given prompt.
 
@@ -130,6 +156,7 @@ async def run_subagent(
                 child_session_id=child_session_id,
                 status="max_steps",
                 error=msg,
+                agent_type=agent_type,
             )
         _log.error("subagent runtime error: child=%s error=%s", child_session_id, msg)
         return SubagentResult(
@@ -137,6 +164,7 @@ async def run_subagent(
             child_session_id=child_session_id,
             status="error",
             error=msg,
+            agent_type=agent_type,
         )
     except RunCancelledError:
         raise
@@ -148,17 +176,22 @@ async def run_subagent(
             child_session_id=child_session_id,
             status="error",
             error=msg,
+            agent_type=agent_type,
         )
 
     _log.info(
         "subagent completed: child=%s steps=%d messages=%d",
         child_session_id, len(result.steps), result.message_count,
     )
+    answer_text = result.answer or "(subagent completed with no text output)"
+    payload = _try_parse_payload(answer_text)
     return SubagentResult(
-        summary=result.answer or "(subagent completed with no text output)",
+        summary=answer_text,
         child_session_id=child_session_id,
         status="completed",
         child_run_id=result.steps[-1].tool_use_id if result.steps else "",
         step_count=len(result.steps),
         message_count=result.message_count,
+        agent_type=agent_type,
+        payload=payload,
     )

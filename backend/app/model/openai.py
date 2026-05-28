@@ -6,10 +6,26 @@ Works with any OpenAI-compatible API (OpenAI, DeepSeek, etc.) via base_url.
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
+from urllib.parse import urlparse
 
-from app.runtime.messages import Message, ModelResponse, ToolResultBlock, ToolUseBlock
-from app.model.base import ModelClientError, register_model_client
+import httpx
+
+from app.runtime.messages import Message, ModelResponse, TokenUsage, ToolResultBlock, ToolUseBlock
+from app.model.base import ModelClientError, PromptTooLongError, register_model_client
+
+
+def _should_bypass_proxy(base_url: str) -> bool:
+    """Check if the base_url host is in NO_PROXY list."""
+    no_proxy = os.environ.get("NO_PROXY", os.environ.get("no_proxy", ""))
+    if not no_proxy or not base_url:
+        return False
+    host = urlparse(base_url).hostname or ""
+    if not host:
+        return False
+    no_proxy_list = [h.strip().lower() for h in no_proxy.split(",") if h.strip()]
+    return host.lower() in no_proxy_list
 
 
 @register_model_client("openai")
@@ -20,7 +36,17 @@ class OpenAIModelClient:
         from openai import AsyncOpenAI
 
         self.model = model
-        self._client = AsyncOpenAI(api_key=api_key or None, base_url=base_url or None)
+        
+        # If base_url is in NO_PROXY list, create httpx client without proxy
+        if _should_bypass_proxy(base_url):
+            http_client = httpx.AsyncClient(proxy=None)
+            self._client = AsyncOpenAI(
+                api_key=api_key or None,
+                base_url=base_url or None,
+                http_client=http_client,
+            )
+        else:
+            self._client = AsyncOpenAI(api_key=api_key or None, base_url=base_url or None)
 
     async def call_model(self, messages: list[Message], tools: list[dict[str, Any]]) -> ModelResponse:
         request: dict[str, Any] = {
@@ -33,9 +59,23 @@ class OpenAIModelClient:
         try:
             response = await self._client.chat.completions.create(**request)
         except Exception as exc:
+            msg = str(exc).lower()
+            if any(
+                phrase in msg
+                for phrase in (
+                    "context_length_exceeded",
+                    "prompt too long",
+                    "maximum context length",
+                    "maximum token",
+                    "too many tokens",
+                    "413",
+                )
+            ):
+                raise PromptTooLongError(f"Prompt exceeds context window: {exc}") from exc
             raise ModelClientError(f"Model API call failed: {exc}") from exc
 
         choice = response.choices[0].message
+        usage = _parse_usage(response)
         tool_calls = choice.tool_calls or []
         if tool_calls:
             tool_uses = []
@@ -62,10 +102,11 @@ class OpenAIModelClient:
                 ),
                 text=text,
                 tool_uses=tool_uses,
+                usage=usage,
             )
 
         text = choice.content or ""
-        return ModelResponse(assistant_message=Message(role="assistant", content=text), text=text)
+        return ModelResponse(assistant_message=Message(role="assistant", content=text), text=text, usage=usage)
 
     async def close(self) -> None:
         """Close the underlying HTTP client to avoid event loop warnings."""
@@ -100,9 +141,10 @@ def _to_openai_messages(messages: list[Message]) -> list[dict[str, Any]]:
                 ],
             })
             continue
-        for block in message.content:
-            if isinstance(block, ToolResultBlock):
-                converted.append({"role": "tool", "tool_call_id": block.tool_use_id, "content": block.content})
+        if message.role == "tool":
+            for block in message.content:
+                if isinstance(block, ToolResultBlock):
+                    converted.append({"role": "tool", "tool_call_id": block.tool_use_id, "content": block.content})
     return converted
 
 
@@ -115,3 +157,15 @@ def _to_openai_tool(tool: dict[str, Any]) -> dict[str, Any]:
             "parameters": tool["input_schema"],
         },
     }
+
+
+def _parse_usage(response: Any) -> TokenUsage | None:
+    """Extract token usage from an OpenAI-compatible response."""
+    raw = getattr(response, "usage", None)
+    if raw is None:
+        return None
+    return TokenUsage(
+        prompt_tokens=getattr(raw, "prompt_tokens", None),
+        completion_tokens=getattr(raw, "completion_tokens", None),
+        total_tokens=getattr(raw, "total_tokens", None),
+    )

@@ -102,7 +102,65 @@ def _format_error(message: str) -> str:
 def _format_result(result: Any) -> str:
     """Format a SubagentResult as a concise tool result string."""
     if result.status == "completed":
-        return result.summary
+        return _format_completed(result)
     if result.status == "max_steps":
         return f"[Subagent stopped: reached maximum steps]\n{result.summary}"
     return f"[Subagent error: {result.error or 'unknown'}]\n{result.summary}"
+
+
+def _format_completed(result: Any) -> str:
+    """Format a completed subagent result with metadata and payload sections."""
+    parts: list[str] = []
+
+    # Metadata header — use getattr for backward-compatible runners.
+    meta_items: list[str] = []
+    agent_type = getattr(result, "agent_type", "")
+    child_session_id = getattr(result, "child_session_id", "")
+    step_count = getattr(result, "step_count", 0)
+    message_count = getattr(result, "message_count", 0)
+    if agent_type:
+        meta_items.append(f"agent_type: {agent_type}")
+    if child_session_id:
+        meta_items.append(f"session: {child_session_id}")
+    if step_count:
+        meta_items.append(f"steps: {step_count}")
+    if message_count:
+        meta_items.append(f"messages: {message_count}")
+    if meta_items:
+        parts.append("[" + ", ".join(meta_items) + "]")
+
+    payload = getattr(result, "payload", None)
+    if payload is None:
+        parts.append(result.summary)
+        return "\n".join(parts)
+
+    # Render payload sections.
+    had_content = False
+    if payload.summary:
+        parts.append(f"## Summary\n{payload.summary}")
+        had_content = True
+
+    if payload.findings:
+        parts.append("## Findings\n" + "\n".join(f"- {f}" for f in payload.findings))
+        had_content = True
+
+    if payload.files:
+        parts.append("## Files\n" + "\n".join(f"- {f}" for f in payload.files))
+        had_content = True
+
+    if payload.actions:
+        parts.append("## Actions\n" + "\n".join(f"- {a}" for a in payload.actions))
+        had_content = True
+
+    if payload.risks:
+        parts.append("## Risks\n" + "\n".join(f"- {r}" for r in payload.risks))
+        had_content = True
+
+    if payload.next_steps:
+        parts.append("## Next steps\n" + "\n".join(f"- {n}" for n in payload.next_steps))
+        had_content = True
+
+    if not had_content:
+        parts.append(result.summary)
+
+    return "\n\n".join(parts)

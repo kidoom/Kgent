@@ -8,6 +8,24 @@ from typing import Sequence
 # Default max steps shared across all definitions.
 DEFAULT_SUBAGENT_MAX_STEPS = 5
 
+# Shared final-answer delivery format for subagent payload parsing.
+FINAL_ANSWER_DELIVERY_FORMAT = (
+    "\n\nWhen you are done, deliver your final answer using the following "
+    "Markdown sections (use only the sections that apply):\n\n"
+    "## Summary\n"
+    "A concise overview of what you found or did.\n\n"
+    "## Findings\n"
+    "- Key observations, evidence, or analysis results.\n\n"
+    "## Files\n"
+    "- Files you inspected or modified.\n\n"
+    "## Actions\n"
+    "- Concrete steps you took or changes you made.\n\n"
+    "## Risks\n"
+    "- Potential issues, caveats, or concerns.\n\n"
+    "## Next steps\n"
+    "- Recommended follow-up actions."
+)
+
 
 @dataclass(frozen=True)
 class AgentDefinition:
@@ -59,13 +77,13 @@ _REVIEWER_PROMPT = (
 GENERAL_PURPOSE = AgentDefinition(
     name="general-purpose",
     description="Broad multi-step work using all available tools.",
-    system_prompt=_GENERAL_PURPOSE_PROMPT,
+    system_prompt=_GENERAL_PURPOSE_PROMPT + FINAL_ANSWER_DELIVERY_FORMAT,
 )
 
 RESEARCHER = AgentDefinition(
     name="researcher",
     description="Read-only code and project investigation.",
-    system_prompt=_RESEARCHER_PROMPT,
+    system_prompt=_RESEARCHER_PROMPT + FINAL_ANSWER_DELIVERY_FORMAT,
     allowed_tools=(
         "calculator", "list_files", "read_file", "grep",
         "web_fetch", "git_status", "git_diff", "git_log",
@@ -75,13 +93,13 @@ RESEARCHER = AgentDefinition(
 IMPLEMENTER = AgentDefinition(
     name="implementer",
     description="Focused implementation tasks with edit/write tools.",
-    system_prompt=_IMPLEMENTER_PROMPT,
+    system_prompt=_IMPLEMENTER_PROMPT + FINAL_ANSWER_DELIVERY_FORMAT,
 )
 
 REVIEWER = AgentDefinition(
     name="reviewer",
     description="Read-only review of changes, risks, and missing tests.",
-    system_prompt=_REVIEWER_PROMPT,
+    system_prompt=_REVIEWER_PROMPT + FINAL_ANSWER_DELIVERY_FORMAT,
     allowed_tools=(
         "calculator", "list_files", "read_file", "grep",
         "web_fetch", "git_status", "git_diff", "git_log",

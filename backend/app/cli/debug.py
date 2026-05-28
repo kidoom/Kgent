@@ -388,7 +388,10 @@ def _make_tracer(show_system: bool, *, compact: bool = False):
 
 def print_messages_table(messages: list[Message], show_system: bool) -> None:
     for index, message in enumerate(messages):
-        print(f"  [{index}] role={message.role:<9} {_format_message_content(message, show_system)}")
+        content = _format_message_content(message, show_system)
+        # Replace emoji characters to avoid GBK encoding errors on Windows
+        content = content.encode("gbk", errors="replace").decode("gbk")
+        print(f"  [{index}] role={message.role:<9} {content}")
 
 
 def _format_message_content(message: Message, show_system: bool) -> str:
