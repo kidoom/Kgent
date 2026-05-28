@@ -7,11 +7,13 @@ from pathlib import Path
 
 from app.model_client import ModelClientError, ModelClientProtocol
 from app.memory.persistence import PersistenceService
+from app.runtime.context_compression import CompressionConfig
 from app.runtime.loop import RunCancelledError, run_agent_stream
 from app.runtime.messages import Message
 from app.runtime.protocol import AgentEvent
 from app.runtime.run_manager import RunManager, RunManagerError, RunManagerHost
 from app.runtime.permissions import PermissionPolicy
+from app.runtime.subagent import reset_active_host, set_active_host
 from app.runtime.todo_state import TodoStateStore
 
 TITLE_PROMPT = (
@@ -62,8 +64,11 @@ async def execute_run(
     project_root: Path,
     persistence: PersistenceService | None = None,
     todo_state_store: TodoStateStore | None = None,
+    compression_config: CompressionConfig | None = None,
+    model_identity: str | None = None,
 ) -> None:
     host = RunManagerHost(run_manager, run_id, session_id)
+    token = set_active_host(host)
     try:
         await run_agent_stream(
             run_id=run_id,
@@ -78,6 +83,8 @@ async def execute_run(
             project_root=project_root,
             persistence=persistence,
             todo_state_store=todo_state_store,
+            compression_config=compression_config,
+            model_identity=model_identity,
         )
         await _maybe_generate_title(
             model_client=model_client,
@@ -108,6 +115,7 @@ async def execute_run(
             error=str(exc),
         )
     finally:
+        reset_active_host(token)
         _active_tasks.pop(run_id, None)
 
 

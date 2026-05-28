@@ -63,11 +63,13 @@ def build_model_messages(
     *,
     project_root: Path,
     max_context_chars: int = DEFAULT_MAX_CONTEXT_CHARS,
+    system_prompt: str | None = None,
 ) -> list[Message]:
     bundle = build_context_bundle(project_root)
+    effective_prompt = system_prompt if system_prompt is not None else bundle.system_prompt
     system_message = Message(
         role="system",
-        content=_append_system_context(bundle.system_prompt, bundle.system_context),
+        content=_append_system_context(effective_prompt, bundle.system_context),
     )
     context_messages = _prepend_user_context(bundle.user_context, max_context_chars=max_context_chars)
     return [system_message, *context_messages, *_strip_legacy_system_messages(session_messages)]

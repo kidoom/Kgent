@@ -100,9 +100,25 @@ def build_runtime_tools(
     persistence: PersistenceService | None = None,
     todo_state_store: TodoStateStore | None = None,
 ):
+    from app.tools.registry import build_subagent_runner
+
+    model_client = resolve_model_client(settings)
+    policy = build_api_policy(settings)
+
+    subagent_runner = build_subagent_runner(
+        model_client=model_client,
+        parent_session_id=session_id,
+        project_root=settings.project_root,
+        policy=policy,
+        persistence=persistence,
+        todo_state_store=todo_state_store,
+    )
+
     return build_tools(
         settings.project_root,
         session_id=session_id,
         persistence=persistence,
         todo_state_store=todo_state_store,
+        subagent_runner=subagent_runner,
+        include_task_tool=True,
     )
