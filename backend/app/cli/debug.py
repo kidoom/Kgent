@@ -23,6 +23,8 @@ from app.runtime.permissions import (
     RiskBasedPolicy,
     normalize_mode,
 )
+from app.runtime.subagent import reset_active_host, set_active_host
+from app.tools.registry import build_subagent_runner
 from app.runtime.protocol import PermissionRequest, ResolvedPermission
 from app.memory.session_store import get_or_create_session, reset_sessions
 from app.core.config import (
@@ -238,6 +240,20 @@ async def _build_runtime(
     )
     permission_mode = normalize_mode(args.permission or settings.permission_mode or "interactive")
     policy = _build_cli_policy(permission_mode)
+
+    session_id = args.session_id
+    subagent_runner = build_subagent_runner(
+        model_client=model_client,
+        parent_session_id=session_id,
+        project_root=settings.project_root,
+        policy=policy,
+    )
+    tools = build_tools(
+        settings.project_root,
+        session_id=session_id,
+        subagent_runner=subagent_runner,
+        include_task_tool=True,
+    )
     return model_client, tools, step_limit, settings, provider, tracer, policy, permission_mode
 
 
@@ -303,6 +319,7 @@ async def _run_turn(
         asker=asker,
         on_step=(lambda step: print_agent_step(step, indent="  ")) if trace else None,
     )
+    token = set_active_host(host)
     try:
         result = await run_agent_stream(
             run_id=run_id,
@@ -320,6 +337,8 @@ async def _run_turn(
     except ModelClientError as exc:
         print(f"\n[model-error] {exc}")
         return
+    finally:
+        reset_active_host(token)
 
     if not trace:
         print("\n=== Agent Loop (summary) ===")

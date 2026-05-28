@@ -168,11 +168,12 @@ async def _run_plan_phase(
     todo_state_store: TodoStateStore | None = None,
     compression_config: CompressionConfig | None = None,
     model_identity: str | None = None,
+    system_prompt: str | None = None,
 ) -> AgentStep:
     """Text-only plan step (debug CLI). Ephemeral runtime prompt is not stored in session."""
     cfg = compression_config or CompressionConfig()
     plan_messages = [*messages, Message(role="user", content=PLAN_TURN_USER_PROMPT)]
-    request_messages = build_model_messages(plan_messages, project_root=project_root)
+    request_messages = build_model_messages(plan_messages, project_root=project_root, system_prompt=system_prompt)
     if cfg.context_compression_enabled and cfg.micro_compact_enabled:
         request_messages = micro_compact_messages(
             request_messages,
@@ -203,10 +204,11 @@ async def _run_plan_phase(
                 persistence=persistence,
                 todo_state_store=todo_state_store,
                 compression_config=compression_config,
+                system_prompt=system_prompt,
             )
             # Rebuild plan request after compact.
             plan_messages = [*messages, Message(role="user", content=PLAN_TURN_USER_PROMPT)]
-            request_messages = build_model_messages(plan_messages, project_root=project_root)
+            request_messages = build_model_messages(plan_messages, project_root=project_root, system_prompt=system_prompt)
             if cfg.context_compression_enabled and cfg.micro_compact_enabled:
                 request_messages = micro_compact_messages(
                     request_messages,
@@ -230,9 +232,10 @@ async def _run_plan_phase(
             persistence=persistence,
             todo_state_store=todo_state_store,
             compression_config=compression_config,
+            system_prompt=system_prompt,
         )
         plan_messages = [*messages, Message(role="user", content=PLAN_TURN_USER_PROMPT)]
-        request_messages = build_model_messages(plan_messages, project_root=project_root)
+        request_messages = build_model_messages(plan_messages, project_root=project_root, system_prompt=system_prompt)
         response = await model_client.call_model(request_messages, tools=[])
 
     plan_text = (response.text or "").strip() or PLAN_FALLBACK_TEXT
@@ -336,6 +339,7 @@ async def run_agent_stream(
     todo_state_store: TodoStateStore | None = None,
     compression_config: CompressionConfig | None = None,
     model_identity: str | None = None,
+    system_prompt: str | None = None,
 ) -> AgentResult:
     if policy is None:
         policy = AllowAllPolicy()
@@ -394,7 +398,7 @@ async def run_agent_stream(
                     on_trace=on_trace,
                     checkpoint="before_plan_call",
                     turn_index=turn_index,
-                    messages=build_model_messages(plan_messages, project_root=effective_project_root),
+                    messages=build_model_messages(plan_messages, project_root=effective_project_root, system_prompt=system_prompt),
                     tool_count=0,
                 )
                 think_step = await _run_plan_phase(
@@ -407,6 +411,7 @@ async def run_agent_stream(
                     todo_state_store=todo_state_store,
                     compression_config=compression_config,
                     model_identity=model_identity,
+                    system_prompt=system_prompt,
                 )
                 steps.append(think_step)
                 seq_counter[0] += 1
@@ -436,11 +441,11 @@ async def run_agent_stream(
                     on_trace=on_trace,
                     checkpoint="before_model_call",
                     turn_index=turn_index,
-                    messages=build_model_messages(messages, project_root=effective_project_root),
+                    messages=build_model_messages(messages, project_root=effective_project_root, system_prompt=system_prompt),
                     tool_count=len(tool_schemas),
                     tool_schemas=tool_schemas,
                 )
-                act_request = build_model_messages(messages, project_root=effective_project_root)
+                act_request = build_model_messages(messages, project_root=effective_project_root, system_prompt=system_prompt)
                 if cfg.context_compression_enabled and cfg.micro_compact_enabled:
                     act_request = micro_compact_messages(
                         act_request,
@@ -471,6 +476,7 @@ async def run_agent_stream(
                             persistence=persistence,
                             todo_state_store=todo_state_store,
                             compression_config=compression_config,
+                            system_prompt=system_prompt,
                         )
                     except Exception:
                         pass  # Compact failure is non-fatal.
@@ -492,6 +498,7 @@ async def run_agent_stream(
                         persistence=persistence,
                         todo_state_store=todo_state_store,
                         compression_config=compression_config,
+                        system_prompt=system_prompt,
                     )
                     response = await model_client.call_model(
                         messages=act_request,
@@ -526,6 +533,7 @@ async def run_agent_stream(
                     todo_state_store=todo_state_store,
                     compression_config=compression_config,
                     model_identity=model_identity,
+                    system_prompt=system_prompt,
                 )
 
             if await host.check_cancelled():
@@ -712,17 +720,19 @@ async def run_agent(
     project_root: Path | None = None,
     persistence: PersistenceService | None = None,
     todo_state_store: TodoStateStore | None = None,
+    system_prompt: str | None = None,
+    host: AgentHost | None = None,
 ) -> AgentResult:
     """Compatibility wrapper over run_agent_stream using CollectingHost."""
     rid = run_id or f"run_{uuid.uuid4().hex[:12]}"
-    host = CollectingHost(run_id=rid, session_id=session_id, auto_resolve_ask=False)
-    await run_agent_stream(
+    effective_host = host or CollectingHost(run_id=rid, session_id=session_id, auto_resolve_ask=False)
+    return await run_agent_stream(
         run_id=rid,
         session_id=session_id,
         message=user_input,
         model_client=model_client,
         tools=tools,
-        host=host,
+        host=effective_host,
         policy=policy,
         max_steps=max_steps,
         max_session_messages=max_session_messages,
@@ -731,8 +741,8 @@ async def run_agent(
         project_root=project_root,
         persistence=persistence,
         todo_state_store=todo_state_store,
+        system_prompt=system_prompt,
     )
-    return host.to_agent_result()
 
 
 async def _compact_and_rebuild(
@@ -745,6 +755,7 @@ async def _compact_and_rebuild(
     persistence: PersistenceService | None,
     todo_state_store: TodoStateStore | None,
     compression_config: CompressionConfig | None = None,
+    system_prompt: str | None = None,
 ) -> list[Message]:
     """Summarize session, replace in-memory messages, rebuild request view."""
     cfg = compression_config or CompressionConfig()
@@ -755,7 +766,7 @@ async def _compact_and_rebuild(
             todo_state_store=todo_state_store,
             session_id=session_id,
         )
-        req = build_model_messages(request_session_messages, project_root=project_root)
+        req = build_model_messages(request_session_messages, project_root=project_root, system_prompt=system_prompt)
         if cfg.context_compression_enabled and cfg.micro_compact_enabled:
             req = micro_compact_messages(
                 req,
@@ -802,6 +813,7 @@ async def _run_standard_turn(
     todo_state_store: TodoStateStore | None = None,
     compression_config: CompressionConfig | None = None,
     model_identity: str | None = None,
+    system_prompt: str | None = None,
 ) -> ModelResponse:
     effective_project_root = _infer_project_root([], project_root)
     cfg = compression_config or CompressionConfig()
@@ -810,7 +822,7 @@ async def _run_standard_turn(
         todo_state_store=todo_state_store,
         session_id=session_id,
     )
-    request_messages = build_model_messages(request_session_messages, project_root=effective_project_root)
+    request_messages = build_model_messages(request_session_messages, project_root=effective_project_root, system_prompt=system_prompt)
     if cfg.context_compression_enabled and cfg.micro_compact_enabled:
         request_messages = micro_compact_messages(
             request_messages,
@@ -841,6 +853,7 @@ async def _run_standard_turn(
                 persistence=persistence,
                 todo_state_store=todo_state_store,
                 compression_config=compression_config,
+                system_prompt=system_prompt,
             )
         except Exception:
             pass  # Compact failure is non-fatal; proceed with original messages.
@@ -871,6 +884,7 @@ async def _run_standard_turn(
             persistence=persistence,
             todo_state_store=todo_state_store,
             compression_config=compression_config,
+            system_prompt=system_prompt,
         )
         response = await model_client.call_model(messages=request_messages, tools=tool_schemas)
 

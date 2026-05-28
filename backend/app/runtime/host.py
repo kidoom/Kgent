@@ -163,6 +163,37 @@ class CLIHost:
         self._cancelled = True
 
 
+class SubagentHost:
+    """Host adapter for child agent loops.
+
+    Child events are silently dropped — they belong to a different run_id
+    that the parent RunManager doesn't know about.  Permission requests are
+    re-written with the parent's run_id/session_id and forwarded so the
+    parent UI can resolve them.  Cancellation is delegated to the parent.
+    """
+
+    def __init__(self, parent_host: AgentHost, parent_run_id: str, parent_session_id: str) -> None:
+        self._parent_host = parent_host
+        self._parent_run_id = parent_run_id
+        self._parent_session_id = parent_session_id
+
+    async def emit(self, event: AgentEvent) -> None:
+        # Child events use a different run_id — don't push them into the
+        # parent RunManager (it would reject or mis-route them).
+        return None
+
+    async def request_permission(self, request: PermissionRequest) -> ResolvedPermission:
+        # Re-write the request so the parent RunManager recognises it.
+        parent_request = request.model_copy(update={
+            "run_id": self._parent_run_id,
+            "session_id": self._parent_session_id,
+        })
+        return await self._parent_host.request_permission(parent_request)
+
+    async def check_cancelled(self) -> bool:
+        return await self._parent_host.check_cancelled()
+
+
 def build_permission_request(
     *,
     run_id: str,
